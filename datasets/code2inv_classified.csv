@@ -1,0 +1,135 @@
+file,n_loops,category,reason,guard
+1.c,1,constant,literal bound; induction starts literal,( y < 100000 )
+10.c,1,unbounded,nondet-oracle guard,unknown ( )
+100.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+101.c,1,parametric,n nondet/input bound,( x < n )
+102.c,1,parametric,n nondet/input bound,( x < n )
+103.c,1,constant,literal bound; induction starts literal,( x < 100 )
+104.c,1,parametric,n nondet/input bound,( x < n )
+105.c,1,parametric,n nondet/input bound,( x < n )
+106.c,1,constant,literal bound; induction starts literal,k < 1
+107.c,1,constant,literal bound; induction starts literal,k < 1
+108.c,1,parametric,c nondet/input bound,k < c
+109.c,1,parametric,c nondet/input bound,k < c
+11.c,1,unbounded,nondet-oracle guard,unknown ( )
+110.c,1,parametric,n nondet/input bound,( i <= n )
+111.c,1,parametric,n nondet/input bound,( i <= n )
+112.c,1,parametric,n nondet/input bound,( i <= n )
+113.c,1,parametric,n nondet/input bound,( i <= n )
+114.c,1,unbounded,nondet-oracle guard,unknown ( )
+115.c,1,unbounded,nondet-oracle guard,unknown ( )
+116.c,1,unbounded,nondet-oracle guard,unknown ( )
+117.c,1,unbounded,nondet-oracle guard,unknown ( )
+118.c,1,parametric,size nondet/input bound,( i <= size )
+119.c,1,parametric,size nondet/input bound,( i <= size )
+12.c,1,unbounded,nondet-oracle guard,unknown ( )
+120.c,1,constant,literal bound; induction starts literal,( i <= 8 )
+121.c,1,constant,literal bound; induction starts literal,( i <= 8 )
+122.c,1,parametric,size nondet/input bound,( i <= size )
+123.c,1,parametric,size nondet/input bound,( i <= size )
+124.c,1,parametric,literal bound; induction starts nondet/input,( x != 0 )
+125.c,1,parametric,literal bound; induction starts nondet/input,( x != 0 )
+126.c,1,parametric,literal bound; induction starts nondet/input,( x != 0 )
+127.c,1,parametric,literal bound; induction starts nondet/input,( x != 0 )
+128.c,1,data-dependent,guard var(s) x non-constant update,( x < y )
+129.c,1,data-dependent,guard var(s) x non-constant update,( x < y )
+13.c,1,unbounded,nondet-oracle guard,unknown ( )
+130.c,1,data-dependent,guard var(s) x1 non-constant update,x1 > 0
+131.c,1,data-dependent,guard var(s) x1 non-constant update,x1 > 0
+132.c,1,unbounded,nondet-oracle guard,unknown ( )
+133.c,1,parametric,n nondet/input bound,( x < n )
+14.c,1,unbounded,nondet-oracle guard,unknown ( )
+15.c,1,parametric,n nondet/input bound,x < n
+16.c,1,parametric,n nondet/input bound,x < n
+17.c,1,parametric,n nondet/input bound,x < n
+18.c,1,parametric,n nondet/input bound,x < n
+19.c,1,parametric,n nondet/input bound,x < n
+2.c,1,constant,literal bound; induction starts literal,( y < 1000 )
+20.c,1,parametric,n nondet/input bound,x < n
+21.c,1,parametric,n nondet/input bound,x < n
+22.c,1,parametric,n nondet/input bound,x < n
+23.c,1,constant,literal bound; induction starts literal,( j >= i )
+24.c,1,constant,literal bound; induction starts literal,( j >= i )
+25.c,1,constant,literal bound; induction starts literal,( x > 0 )
+26.c,1,parametric,literal bound; induction starts nondet/input,( x > 1 )
+27.c,1,parametric,literal bound; induction starts nondet/input,( x > 1 )
+28.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+29.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+3.c,1,constant,literal bound; induction starts literal,x < 5
+30.c,1,constant,literal bound; induction starts literal,( x > 0 )
+31.c,1,parametric,literal bound; induction starts nondet/input,( x > 1 )
+32.c,1,parametric,literal bound; induction starts nondet/input,( x > 1 )
+33.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+34.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+35.c,1,unbounded,nondet-oracle guard,unknown ( )
+36.c,1,unbounded,nondet-oracle guard,unknown ( )
+37.c,1,unbounded,nondet-oracle guard,unknown ( )
+38.c,1,unbounded,nondet-oracle guard,unknown ( )
+39.c,1,unbounded,nondet-oracle guard,unknown ( )
+4.c,1,constant,literal bound; induction starts literal,x < 500
+40.c,1,unbounded,nondet-oracle guard,unknown ( )
+41.c,1,unbounded,nondet-oracle guard,unknown ( )
+42.c,1,unbounded,nondet-oracle guard,unknown ( )
+43.c,1,unbounded,nondet-oracle guard,unknown ( )
+44.c,1,unbounded,nondet-oracle guard,unknown ( )
+45.c,1,unbounded,nondet-oracle guard,unknown ( )
+46.c,1,unbounded,nondet-oracle guard,unknown ( )
+47.c,1,unbounded,nondet-oracle guard,unknown ( )
+48.c,1,unbounded,nondet-oracle guard,unknown ( )
+49.c,1,unbounded,nondet-oracle guard,unknown ( )
+5.c,1,parametric,size nondet/input bound,x < size
+50.c,1,unbounded,nondet-oracle guard,unknown ( )
+51.c,1,unbounded,nondet-oracle guard,unknown ( )
+52.c,1,unbounded,nondet-oracle guard,unknown ( )
+53.c,1,unbounded,nondet-oracle guard,unknown ( )
+54.c,1,unbounded,nondet-oracle guard,unknown ( )
+55.c,1,unbounded,nondet-oracle guard,unknown ( )
+56.c,1,unbounded,nondet-oracle guard,unknown ( )
+57.c,1,unbounded,nondet-oracle guard,unknown ( )
+58.c,1,unbounded,nondet-oracle guard,unknown ( )
+59.c,1,unbounded,nondet-oracle guard,unknown ( )
+6.c,1,parametric,size nondet/input bound,x < size
+60.c,1,unbounded,nondet-oracle guard,unknown ( )
+61.c,1,unbounded,nondet-oracle guard,unknown ( )
+62.c,1,unbounded,nondet-oracle guard,unknown ( )
+63.c,1,constant,literal bound; induction starts literal,x <= 10
+64.c,1,constant,literal bound; induction starts literal,x <= 10
+65.c,1,constant,literal bound; induction starts literal,x <= 100
+66.c,1,constant,literal bound; induction starts literal,x <= 100
+67.c,1,parametric,n nondet/input bound,x <= n
+68.c,1,parametric,n nondet/input bound,x <= n
+69.c,1,parametric,n nondet/input bound,x <= n
+7.c,1,unbounded,nondet-oracle guard,unknown ( )
+70.c,1,parametric,n nondet/input bound,x <= n
+71.c,1,unbounded,nondet-oracle guard,unknown ( )
+72.c,1,unbounded,nondet-oracle guard,unknown ( )
+73.c,1,unbounded,nondet-oracle guard,unknown ( )
+74.c,1,unbounded,nondet-oracle guard,unknown ( )
+75.c,1,unbounded,nondet-oracle guard,unknown ( )
+76.c,1,unbounded,nondet-oracle guard,unknown ( )
+77.c,1,unbounded,nondet-oracle guard,unknown ( )
+78.c,1,unbounded,nondet-oracle guard,unknown ( )
+79.c,1,unbounded,nondet-oracle guard,unknown ( )
+8.c,1,unbounded,nondet-oracle guard,unknown ( )
+80.c,1,unbounded,nondet-oracle guard,unknown ( )
+81.c,1,unbounded,nondet-oracle guard,unknown ( )
+82.c,1,unbounded,nondet-oracle guard,unknown ( )
+83.c,1,data-dependent,guard var(s) x non-constant update,( x < 0 )
+84.c,1,data-dependent,guard var(s) x non-constant update,( x < 0 )
+85.c,1,data-dependent,guard var(s) x non-constant update,( x < 0 )
+86.c,1,data-dependent,guard var(s) x non-constant update,( x < 0 )
+87.c,1,unbounded,"guard var(s) x,y nondet-controlled",( x != y )
+88.c,1,unbounded,"guard var(s) x,y nondet-controlled",( x != y )
+89.c,1,unbounded,"guard var(s) x,y nondet-controlled",( x != y )
+9.c,1,unbounded,nondet-oracle guard,unknown ( )
+90.c,1,unbounded,"guard var(s) x,y nondet-controlled",( x != y )
+91.c,1,data-dependent,guard var(s) y non-constant update,y >= 0
+92.c,1,data-dependent,guard var(s) y non-constant update,y >= 0
+93.c,1,parametric,n nondet/input bound,( i < n )
+94.c,1,parametric,n nondet/input bound,( i <= n )
+95.c,1,parametric,x nondet/input bound,( i <= x )
+96.c,1,parametric,x nondet/input bound,( i <= x )
+97.c,1,parametric,x nondet/input bound,( i <= x )
+98.c,1,parametric,x nondet/input bound,( i <= x )
+99.c,1,parametric,literal bound; induction starts nondet/input,( x > 0 )
+test.c,1,parametric,literal bound; induction starts nondet/input,x > 0
