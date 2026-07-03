@@ -4,16 +4,6 @@ probe_classify_code2inv_v3.py  (READ-ONLY — writes only a CSV, never edits .c 
 
 Corrected loop-bound classifier for single-loop Code2Inv programs.
 
-Key fixes over v2:
-  * Initial values are read from PRE-LOOP assignments in source order
-    (Code2Inv writes `(x = 0);` statements, not declarator initialisers),
-    with nondet-taint propagation (x = n where n is a nondet input => x is nondet).
-  * The BOUND may be a literal; a literal bound with a const-stepped induction
-    variable is constant/parametric, never "mutating bound".
-  * Induction variable is separated from the bound: the induction variable is
-    always modified, which is not evidence of a mutating bound.
-  * A guard variable updated by a NON-constant step (e.g. x = x + y) => data-dependent.
-
 Decision order (first match wins):
   0a. nondet-oracle guard (while(unknown()))                       -> unbounded
   0b. array/pointer deref in guard                                 -> data-dependent
@@ -30,7 +20,6 @@ Decision order (first match wins):
 
 Usage:
   pip install libclang
-  python probe_classify_code2inv_v3.py "E:/.../benchmarks/C_instances/c"
 """
 
 import sys
