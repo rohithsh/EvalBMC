@@ -31,7 +31,7 @@ Usage:
   python3 svcomp_preprocessor.py \
       --root  datasets/sv-benchmarks/c \
       --sets  Loops.set Arrays.set Heap.set LinkedLists.set ControlFlow.set BitVectors.set \
-      --dest  datasets/run1 \
+      --dest  datasets/cleaned \
       [--scripts .]        # dir holding the stage scripts (default: this dir)
       [--jobs 8] [--threshold 2]
 """
