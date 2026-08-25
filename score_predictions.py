@@ -178,6 +178,18 @@ def verify_margins(job):
             return idx, f, st, ";".join(tried)
     return idx, None, "none_worked", ";".join(tried)
 
+def provably_unbounded(rec):
+    """
+    Returns True when at least one loop admits no finite bound, so no
+    unwind depth ever causes a violation in its unwinding assertion.
+    """
+    for l in rec.get("loops", []):
+        if l.get("category") == "input-bounded" and not l.get("bound_constrained"):
+            return True
+        if "re-draws nondet" in (l.get("reason") or ""):
+            return True
+    return False
+
 
 # ------------------------------------------------------------------- main
 
@@ -267,8 +279,12 @@ def main():
 
         # abstention needs no verification
         if kind == "unbounded":
-            row["outcome"] = ("abstain_unwarranted" if has_truth
-                              else "abstain_warranted")
+            if has_truth:
+                row["outcome"] = "abstain_unwarranted"  # a bound existed
+            elif provably_unbounded(rec):
+                row["outcome"] = "abstain_warranted"  # none can exist
+            else:
+                row["outcome"] = "abstain_unverified"  # search timed out
             row["verified"] = "not_run"
             rows.append(row)
             continue
@@ -429,10 +445,12 @@ def main():
             # ---- abstention ----
             aw = sum(1 for r in sub if r["outcome"] == "abstain_warranted")
             au = sum(1 for r in sub if r["outcome"] == "abstain_unwarranted")
-            if aw or au:
+            an = sum(1 for r in sub if r["outcome"] == "abstain_unverified")
+            if aw or au or an:
                 print("\nABSTENTION")
-                print("   warranted (no finite k* exists) : {}".format(aw))
-                print("   unwarranted (a bound existed)   : {}".format(au))
+                print("   warranted   (no finite bound can exist) : {}".format(aw))
+                print("   unwarranted (a finite k* was found)     : {}".format(au))
+                print("   unverified  (k* search timed out)       : {}".format(an))
 
             # ---- tightness, working predictions only ----
             tight = sorted(float(r["tightness"]) for r in sub if r["tightness"] != "")
