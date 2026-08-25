@@ -166,7 +166,8 @@ def analyse(stdout, prop):
         return "unwind", "", [i for i in unwind_ids if i], ""
 
     if not others:
-        if status in ("success", None):
+        # Only an explicit success verdict counts as a proof.
+        if status == "success":
             return "success", "", [], ""
         return "unknown", "", [], ""
 
@@ -230,6 +231,10 @@ def search_uniform(cfile, data_model, prop, verdict_kind, budget, max_k, per_k):
             other_seen = other
         if is_done(verdict_kind, res):
             return {"outcome": "found", "kstar": k, "k_reached": k,
+                    "failing": failing, "other": other_seen,
+                    "time": round(time.time() - start, 1), "trace": out}
+        if verdict_kind == "safe" and res == "violation":
+            return {"outcome": "unexpected_violation", "kstar": "", "k_reached": k,
                     "failing": failing, "other": other_seen,
                     "time": round(time.time() - start, 1), "trace": out}
         k += 1
@@ -480,21 +485,36 @@ def summarise(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--json", required=True)
-    ap.add_argument("--dataset", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--trace-dir", required=True)
-    ap.add_argument("--jobs", type=int, default=4)
-    ap.add_argument("--mode", choices=["uniform", "schedule", "both"], default="both")
-    ap.add_argument("--budget", type=int, default=600)
-    ap.add_argument("--per-k-timeout", type=int, default=180)
-    ap.add_argument("--max-k", type=int, default=100000)
+    ap.add_argument("--json", required=True,
+                    help="loops.json from preprocessing")
+    ap.add_argument("--dataset", required=True,
+                    help="directory holding the programs")
+    ap.add_argument("--out", required=True,
+                    help="results CSV")
+    ap.add_argument("--trace-dir", required=True,
+                    help="where CBMC's counterexample trace is written")
+    ap.add_argument("--jobs", type=int, default=4,
+                    help="programs analysed in parallel")
+    ap.add_argument("--mode", choices=["uniform", "schedule", "both"], default="both",
+                    help="'uniform' one depth for every loop (--unwind), "
+                         "'schedule' one depth per loop (--unwindset), "
+                         "'both' runs the schedule search only on multi-loop programs")
+    ap.add_argument("--budget", type=int, default=600,
+                    help="seconds allowed for the  incremental search on one program")
+    ap.add_argument("--per-k-timeout", type=int, default=180,
+                    help="seconds allowed for a single CBMC invocation at one depth")
+    ap.add_argument("--max-k", type=int, default=100000,
+                    help="ceiling on the unwind depth")
     ap.add_argument("--properties", nargs="+", default=list(PROP_KEYS),
-                    choices=list(PROP_KEYS))
+                    choices=list(PROP_KEYS),
+                    help="svcomp properties to derive bounds for")
     ap.add_argument("--verdicts", nargs="+", default=["unsafe", "safe"],
-                    choices=["unsafe", "safe"])
-    ap.add_argument("--restart", action="store_true")
-    ap.add_argument("--summary-only", action="store_true")
+                    choices=["unsafe", "safe"],
+                    help="which programs to include")
+    ap.add_argument("--restart", action="store_true",
+                    help="discard an existing --out file and start over")
+    ap.add_argument("--summary-only", action="store_true",
+                    help="print the summary for an existing --out file and exit")
     a = ap.parse_args()
 
     outp = Path(a.out)
