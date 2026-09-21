@@ -2,39 +2,49 @@
 """
 llm_client.py
 
-Provider adapters.
+Provider adapters and nothing else. No prompts, no program analysis.
 
 Every backend implements one method:
 
     complete(system, user) -> str
 
-Available clients:
-  openai      any endpoint exposing /v1/chat/completions. Covers vLLM, Ollama, OpenAI
-  anthropic   Anthropic Messages API.
-  echo        returns a fixed reply without contacting anything; to
-              exercise the pipeline and inspect prompts for free.
+Adding a provider means writing one class and adding one line to PROVIDERS.
 
-KEY ROTATION
-  Several API keys can be supplied. On HTTP 429 (rate limited) the client moves
-  to the next key and retries immediately, and STAYS on that key.
-  Keys are read from the environment: API_KEY, then API_KEY_BACKUP, then
-  API_KEY_2, API_KEY_3, ... in that order. Whichever are set are used.
+KEY ROTATION AND RATE LIMITS
+  Any number of API keys can be supplied. Every environment variable matching
+  API_KEY, API_KEY_<n> or API_KEY_<name> is collected, in that order, so adding
+  a key means adding a line to .env and nothing else.
+
+  On HTTP 429 the client marks that key as limited and retries the same request
+  on the next available key. A limited key is not tried again until the clock
+  hour changes, because these quotas are hourly: retrying within the same hour
+  only earns another 429.
+
+  When every key is limited the client sleeps until the top of the next hour
+  and then clears all the marks. Only one thread performs the sleep; the others
+  wait on the same barrier, so a pool of workers does not multiply the wait.
+  The wait is announced, since an unexplained pause of up to an hour looks like
+  a hang.
+
+Standalone check:
+    python3 llm_client.py --provider openai \
+        --base-url https://chat-ai.academiccloud.de/v1 --model gpt-oss-120b
 """
 
 import argparse
 import json
 import os
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 
 import requests
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+from dotenv import load_dotenv
+load_dotenv()
+
 
 
 class ProviderError(Exception):
@@ -42,23 +52,136 @@ class ProviderError(Exception):
 
 
 class RateLimited(ProviderError):
-    """Every key was rate limited. Retried with a longer backoff."""
-
-    def __init__(self, message, retry_after=None):
-        super().__init__(message)
-        self.retry_after = retry_after
+    """Every key is rate limited."""
 
 
-def keys_from_env(names=("API_KEY", "API_KEY_BACKUP", "API_KEY_2",
-                         "API_KEY_3", "API_KEY_4")):
-    """Whichever of these are set, in order, de-duplicated."""
-    out = []
-    for n in names:
-        v = os.environ.get(n)
-        if v and v.strip() and v.strip() not in out:
-            out.append(v.strip())
+# ------------------------------------------------------------------- keys
+
+KEY_RE = re.compile(r"^API_KEY(?:_(\w+))?$")
+
+
+def keys_from_env():
+    """
+    Every API_KEY* variable in the environment, de-duplicated.
+
+    API_KEY comes first, then numbered keys in numeric order, then any named
+    ones alphabetically, so the ordering is stable across runs.
+    """
+    found = []
+    for name, value in os.environ.items():
+        m = KEY_RE.match(name)
+        if not m or not value or not value.strip():
+            continue
+        suffix = m.group(1)
+        if suffix is None:
+            rank = (0, 0, "")
+        elif suffix.isdigit():
+            rank = (1, int(suffix), "")
+        else:
+            rank = (2, 0, suffix.lower())
+        found.append((rank, value.strip(), name))
+
+    found.sort(key=lambda x: x[0])
+    out, seen = [], set()
+    for _, value, name in found:
+        if value not in seen:
+            seen.add(value)
+            out.append((name, value))
     return out
 
+
+def seconds_to_next_hour():
+    now = datetime.now()
+    nxt = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    return max(1.0, (nxt - now).total_seconds())
+
+
+class KeyRing:
+    """
+    Rotating set of keys, safe to share across threads.
+
+    A key limited during this clock hour is skipped until the hour rolls over.
+    When none are available the ring waits for the next hour boundary once,
+    on behalf of every waiting thread, and then clears the marks.
+    """
+
+    def __init__(self, keys, verbose=True):
+        self.keys = [v for _, v in keys] or ["not-needed"]
+        self.names = [n for n, _ in keys] or ["(none)"]
+        self.limited = {}                 # index -> hour when it was limited
+        self.idx = 0
+        self.rotations = 0
+        self.waits = 0
+        self.verbose = verbose
+        self._lock = threading.Lock()
+        self._waiting = False
+        self._cv = threading.Condition(self._lock)
+
+    @staticmethod
+    def _hour():
+        return datetime.now().replace(minute=0, second=0, microsecond=0)
+
+    def _available(self):
+        """Indices not limited in the current hour (assumes the lock is held)."""
+        now = self._hour()
+        for i, h in list(self.limited.items()):
+            if h < now:
+                del self.limited[i]       # a new hour: the quota reset
+        return [i for i in range(len(self.keys)) if i not in self.limited]
+
+    def current(self):
+        """(key, index). Blocks until the next hour if every key is limited."""
+        with self._cv:
+            while True:
+                avail = self._available()
+                if avail:
+                    if self.idx not in avail:
+                        self.idx = avail[0]
+                    return self.keys[self.idx], self.idx
+
+                # every key limited: one thread waits, the rest follow it
+                if self._waiting:
+                    self._cv.wait(timeout=30)
+                    continue
+
+                self._waiting = True
+                wait = seconds_to_next_hour()
+                self.waits += 1
+                if self.verbose:
+                    print("[llm_client] all {} key(s) rate limited; waiting "
+                          "{:.0f} min for the next hour".format(
+                              len(self.keys), wait / 60.0), flush=True)
+                self._cv.release()
+                try:
+                    time.sleep(wait + 5)
+                finally:
+                    self._cv.acquire()
+                self.limited.clear()
+                self._waiting = False
+                self._cv.notify_all()
+                if self.verbose:
+                    print("[llm_client] resuming", flush=True)
+
+    def mark_limited(self, idx):
+        """Record that this key is limited, and move on."""
+        with self._cv:
+            self.limited[idx] = self._hour()
+            avail = [i for i in range(len(self.keys)) if i not in self.limited]
+            if avail:
+                self.idx = avail[0]
+                self.rotations += 1
+            self._cv.notify_all()
+            return bool(avail)
+
+    def status(self):
+        with self._lock:
+            return {"keys": len(self.keys),
+                    "limited": len(self.limited),
+                    "rotations": self.rotations,
+                    "hour_waits": self.waits}
+
+
+# --------------------------------------------------------------- providers
 
 class Provider(ABC):
     name = "abstract"
@@ -75,22 +198,11 @@ class Provider(ABC):
     def _call(self, system, user):
         """Provider-specific request. Raise on failure."""
 
-    def complete(self, system, user, retries=2, backoff=2.0,
-                 rate_limit_wait=30.0):
-        """
-        Call the model, retrying failures. A rate limit waits longer than an
-        ordinary error, since retrying a limited endpoint straight away only
-        earns another 429.
-        """
+    def complete(self, system, user, retries=2, backoff=2.0):
         last = None
         for attempt in range(retries + 1):
             try:
                 return self._call(system, user)
-            except RateLimited as e:
-                last = e
-                if attempt < retries:
-                    wait = e.retry_after or (rate_limit_wait * (attempt + 1))
-                    time.sleep(wait)
             except Exception as e:
                 last = e
                 if attempt < retries:
@@ -102,43 +214,6 @@ class Provider(ABC):
                 "temperature": self.temperature, "max_tokens": self.max_tokens}
 
 
-class KeyRing:
-    """Rotating set of API keys, safe to share across threads."""
-
-    def __init__(self, keys, retry_primary_after=300.0):
-        self.keys = list(keys) or ["not-needed"]
-        self.idx = 0
-        self.retry_primary_after = retry_primary_after
-        self._switched_at = None
-        self._lock = threading.Lock()
-        self.rotations = 0
-
-    def current(self):
-        with self._lock:
-            # periodically give the primary another chance
-            if (self.idx != 0 and self._switched_at is not None
-                    and time.time() - self._switched_at > self.retry_primary_after):
-                self.idx = 0
-                self._switched_at = None
-            return self.keys[self.idx], self.idx
-
-    def rotate(self, from_idx):
-        """
-        Move past the key that was limited. Returns True if a different key is
-        now in use. from_idx guards against two threads rotating for the same
-        429 and skipping a key between them.
-        """
-        with self._lock:
-            if from_idx != self.idx:
-                return True                      # another thread already moved
-            if len(self.keys) == 1:
-                return False
-            self.idx = (self.idx + 1) % len(self.keys)
-            self._switched_at = time.time()
-            self.rotations += 1
-            return self.idx != from_idx
-
-
 class OpenAICompatible(Provider):
     """
     /v1/chat/completions. Works with vLLM, Ollama, OpenAI and most hosted
@@ -148,22 +223,10 @@ class OpenAICompatible(Provider):
     name = "openai"
 
     def __init__(self, model, base_url="https://api.openai.com/v1",
-                 api_key=None, api_keys=None, retry_primary_after=300.0, **kw):
+                 keys=None, **kw):
         super().__init__(model, **kw)
         self.base_url = base_url.rstrip("/")
-        keys = [k for k in (api_keys or []) if k]
-        if not keys and api_key:
-            keys = [api_key]
-        if not keys:
-            keys = ["not-needed"]          # local servers usually ignore it
-        self.ring = KeyRing(keys, retry_primary_after)
-
-    def _post(self, key, payload):
-        return requests.post(
-            "{}/chat/completions".format(self.base_url),
-            headers={"Authorization": "Bearer {}".format(key),
-                     "Content-Type": "application/json"},
-            json=payload, timeout=self.timeout)
+        self.ring = KeyRing(keys or [])
 
     def _call(self, system, user):
         payload = {
@@ -175,21 +238,17 @@ class OpenAICompatible(Provider):
         }
         payload.update(self.extra)
 
-        tried, retry_after = 0, None
-        while tried < len(self.ring.keys):
-            key, idx = self.ring.current()
-            r = self._post(key, payload)
+        while True:
+            key, idx = self.ring.current()       # blocks if all are limited
+            r = requests.post(
+                "{}/chat/completions".format(self.base_url),
+                headers={"Authorization": "Bearer {}".format(key),
+                         "Content-Type": "application/json"},
+                json=payload, timeout=self.timeout)
 
             if r.status_code == 429:
-                ra = r.headers.get("Retry-After")
-                try:
-                    retry_after = float(ra) if ra else retry_after
-                except ValueError:
-                    pass
-                tried += 1
-                if not self.ring.rotate(idx):
-                    break                    # only one key, nothing to rotate to
-                continue
+                self.ring.mark_limited(idx)
+                continue                          # next key, or wait
 
             r.raise_for_status()
             data = r.json()
@@ -202,8 +261,8 @@ class OpenAICompatible(Provider):
 
             # Reasoning models (gpt-oss and similar) return a separate
             # 'reasoning' field. When the token budget is spent inside it,
-            # 'content' comes back null and the answer, if any, is at the end
-            # of the reasoning.
+            # 'content' is null and the answer, if any, is at the end of the
+            # reasoning.
             for k in ("reasoning", "reasoning_content"):
                 alt = msg.get(k)
                 if alt and alt.strip():
@@ -214,14 +273,9 @@ class OpenAICompatible(Provider):
                     choice.get("finish_reason"),
                     (data.get("usage") or {}).get("completion_tokens")))
 
-        raise RateLimited(
-            "all {} key(s) rate limited".format(len(self.ring.keys)),
-            retry_after=retry_after)
-
     def describe(self):
         d = super().describe()
-        d["keys"] = len(self.ring.keys)
-        d["key_rotations"] = self.ring.rotations
+        d.update(self.ring.status())
         return d
 
 
@@ -229,11 +283,10 @@ class AnthropicProvider(Provider):
     name = "anthropic"
 
     def __init__(self, model, base_url="https://api.anthropic.com/v1",
-                 api_key=None, api_keys=None, retry_primary_after=300.0, **kw):
+                 keys=None, **kw):
         super().__init__(model, **kw)
         self.base_url = base_url.rstrip("/")
-        keys = [k for k in (api_keys or []) if k] or ([api_key] if api_key else [])
-        self.ring = KeyRing(keys or [""], retry_primary_after)
+        self.ring = KeyRing(keys or [])
 
     def _call(self, system, user):
         payload = {
@@ -243,8 +296,7 @@ class AnthropicProvider(Provider):
         }
         payload.update(self.extra)
 
-        tried, retry_after = 0, None
-        while tried < len(self.ring.keys):
+        while True:
             key, idx = self.ring.current()
             r = requests.post("{}/messages".format(self.base_url),
                               headers={"x-api-key": key,
@@ -252,27 +304,15 @@ class AnthropicProvider(Provider):
                                        "Content-Type": "application/json"},
                               json=payload, timeout=self.timeout)
             if r.status_code == 429:
-                ra = r.headers.get("retry-after")
-                try:
-                    retry_after = float(ra) if ra else retry_after
-                except ValueError:
-                    pass
-                tried += 1
-                if not self.ring.rotate(idx):
-                    break
+                self.ring.mark_limited(idx)
                 continue
             r.raise_for_status()
             return "".join(b.get("text", "") for b in r.json().get("content", [])
                            if b.get("type") == "text")
 
-        raise RateLimited(
-            "all {} key(s) rate limited".format(len(self.ring.keys)),
-            retry_after=retry_after)
-
     def describe(self):
         d = super().describe()
-        d["keys"] = len(self.ring.keys)
-        d["key_rotations"] = self.ring.rotations
+        d.update(self.ring.status())
         return d
 
 
@@ -294,7 +334,6 @@ PROVIDERS = {
 
 
 def add_provider_args(ap):
-    """Shared flags, so every script takes the same model options."""
     g = ap.add_argument_group("model")
     g.add_argument("--provider", choices=list(PROVIDERS), default="openai")
     g.add_argument("--model", default=None)
@@ -304,9 +343,6 @@ def add_provider_args(ap):
     g.add_argument("--request-timeout", type=int, default=180)
     g.add_argument("--extra-json", default=None,
                    help="JSON merged into the request body (provider options)")
-    g.add_argument("--key-retry-primary", type=float, default=300.0,
-                   help="seconds before the primary key is tried again after "
-                        "rotating away from it")
     return ap
 
 
@@ -324,21 +360,19 @@ def build_provider(a):
 
     keys = keys_from_env()
     if not keys:
-        print("[warn] no API_KEY / API_KEY_BACKUP found in the environment")
+        print("[llm_client] no API_KEY* variables found in the environment")
     else:
-        print("using {} API key(s)".format(len(keys)))
+        print("[llm_client] {} key(s): {}".format(
+            len(keys), ", ".join(n for n, _ in keys)))
 
-    retry_primary = getattr(a, "key_retry_primary", 300.0)
     if a.provider == "openai":
         return OpenAICompatible(a.model,
                                 base_url=a.base_url or "https://api.openai.com/v1",
-                                api_keys=keys,
-                                retry_primary_after=retry_primary, **kw)
+                                keys=keys, **kw)
     if a.provider == "anthropic":
         return AnthropicProvider(a.model,
                                  base_url=a.base_url or "https://api.anthropic.com/v1",
-                                 api_keys=keys,
-                                 retry_primary_after=retry_primary, **kw)
+                                 keys=keys, **kw)
     raise SystemExit("unknown provider: {}".format(a.provider))
 
 

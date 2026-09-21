@@ -30,7 +30,7 @@ Loop ids come from `cbmc --show-loops` (authoritative). Loops from
 builtins/headers are dropped; loops are matched to the AST by source line.
 
 Usage:
-  python3 svcomp_loop_parser.py --dataset datasets/svcomp_clean \
+  python3 svcomp_loop_parser.py --dataset datasets/cleaned/svcomp_clean \
       --out results/loops.json [--jobs 8] [--limit 50] [--dir loops]
 """
 
@@ -539,6 +539,10 @@ def classify(loop, fn_info, enclosing_written):
 
     # array / pointer deref in guard (sizeof excluded) -> value from memory
     if guard_memory(guard):
+        refs = list(dict.fromkeys(idents_no_sizeof(guard)))
+        written, conststep = loop_writes(loop)
+        extras["induction_vars"] = [r for r in refs if r in conststep]
+        extras["bound_vars"] = [r for r in refs if r not in conststep]
         extras["bound_expr"] = extras["guard"]
         return "data-dependent", "array/pointer access in guard", extras
 

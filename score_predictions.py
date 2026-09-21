@@ -65,7 +65,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 import derive_kstar as kstar
 
-
+MAX_PRACTICAL_K = 10000
 # ------------------------------------------------------------------- helpers
 
 def num(x):
@@ -74,6 +74,11 @@ def num(x):
     except (TypeError, ValueError):
         return None
 
+def fnum(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
 
 def parse_schedule_field(s):
     out = {}
@@ -130,7 +135,8 @@ def scale(kind, k, sched, factor):
 # ------------------------------------------------------------ CBMC verify
 
 def run_bound(cfile, data_model, prop, verdict, kind, k, sched, timeout):
-    """One CBMC run at a given bound. Returns (status, detail)."""
+    """One CBMC run at a given bound. Returns (status, detail, seconds)."""
+    t0 = time.time()
     try:
         if kind == "uniform":
             st, out = kstar.cbmc_run(cfile, data_model, prop,
@@ -139,23 +145,23 @@ def run_bound(cfile, data_model, prop, verdict, kind, k, sched, timeout):
             st, out = kstar.cbmc_run(cfile, data_model, prop,
                                      unwind=0, unwindset=sched, timeout=timeout)
         else:
-            return "not_applicable", ""
+            return "not_applicable", "", 0.0
     except Exception as e:
-        return "error", str(e)[:80]
+        return "error", str(e)[:80], round(time.time() - t0, 2)
 
+    elapsed = round(time.time() - t0, 2)
     if st != "ok":
-        return "timeout", ""
-
+        return "timeout", "", elapsed
     res, failing, _, other = kstar.analyse(out, prop)
     if kstar.is_done(verdict, res):
-        return "works", failing
+        return "works", failing, elapsed
     if res == "unwind":
-        return "insufficient", ""       # a loop was cut short
+        return "insufficient", "", elapsed
     if res == "success" and verdict == "unsafe":
-        return "no_violation", ""       # sound, but the bug was not reached
+        return "no_violation", "", elapsed
     if res == "other":
-        return "other_property", other
-    return "inconclusive", ""
+        return "other_property", other, elapsed
+    return "inconclusive", "", elapsed
 
 
 def verify_base(job):
@@ -165,18 +171,19 @@ def verify_base(job):
 
 def verify_margins(job):
     """
-    Scale the prediction by each factor in ascending order and stop at the
+    Scale the prediction by each factor in ascending order, stopping at the
     first that works. Sequential inside one worker so the early exit is real.
     """
     idx, (cfile, dm, prop, verdict, kind, k, sched, timeout, factors) = job
-    tried = []
+    tried, total = [], 0.0
     for f in factors:
         sk, ss = scale(kind, k, sched, f)
-        st, _ = run_bound(cfile, dm, prop, verdict, kind, sk, ss, timeout)
+        st, _, secs = run_bound(cfile, dm, prop, verdict, kind, sk, ss, timeout)
+        total += secs
         tried.append("{}x:{}".format(f, st))
         if st == "works":
-            return idx, f, st, ";".join(tried)
-    return idx, None, "none_worked", ";".join(tried)
+            return idx, f, st, ";".join(tried), round(total, 2)
+    return idx, None, "none_worked", ";".join(tried), round(total, 2)
 
 def provably_unbounded(rec):
     """
@@ -236,13 +243,16 @@ def main():
             "config": p.get("config", ""), "mode": p.get("mode", ""),
             "pred_kind": "", "pred_k": "", "pred_schedule": "", "pred_cost": "",
             "true_outcome": "", "true_kstar": "", "true_cost": "",
-            "verified": "", "verify_detail": "",
+            "verified": "", "verify_detail": "", "verify_seconds": "",
+            "baseline_seconds": "", "speedup": "",
+            "solved_where_baseline_failed": "",
             "tightness": "", "margin_analytic": "", "margin_empirical": "",
-            "margin_detail": "", "outcome": "",
+            "margin_detail": "", "margin_seconds": "", "outcome": "",
         }
         if gt:
             row["true_outcome"] = gt.get("uniform_outcome", "")
             row["true_kstar"] = gt.get("uniform_kstar", "")
+            row["baseline_seconds"] = gt.get("uniform_time", "")
 
         if not parsed:
             row["outcome"] = "no_prediction"
@@ -302,9 +312,13 @@ def main():
 
         if a.no_verify:
             row["verified"] = "not_run"
-        elif identical:
-            row["verified"] = "works"
-            row["verify_detail"] = "identical to k*, not re-run"
+        elif kind == "uniform" and (k or 0) > MAX_PRACTICAL_K:
+            row["verified"] = "impractical"
+            row["verify_detail"] = "predicted k={} exceeds what CBMC can unroll".format(k)
+        elif kind == "schedule" and sched and max(sched.values()) > MAX_PRACTICAL_K:
+            row["verified"] = "impractical"
+            row["verify_detail"] = "schedule max {} exceeds what CBMC can unroll".format(
+                max(sched.values()))
         else:
             cfile = Path(a.dataset) / rec["dir"] / rec["c_file"]
             if not cfile.exists():
@@ -323,11 +337,12 @@ def main():
             futs = [ex.submit(verify_base, j) for j in base_jobs]
             for f in as_completed(futs):
                 try:
-                    idx, (status, detail) = f.result()
-                except Exception as e:
+                    idx, (status, detail, secs) = f.result()
+                except Exception:
                     continue
                 rows[idx]["verified"] = status
                 rows[idx]["verify_detail"] = detail
+                rows[idx]["verify_seconds"] = secs
                 done += 1
                 if done % 25 == 0 or done == len(base_jobs):
                     print("   {}/{}  ({:.0f}m)".format(
@@ -344,6 +359,14 @@ def main():
             pc, tc = num(row["pred_cost"]), num(row["true_cost"])
             if pc is not None and tc:
                 row["tightness"] = round(pc / float(tc), 3)
+            # Speedup is only meaningful against a baseline that finished.
+            # A timed-out search gives the budget, not a completion time, so
+            # comparing against it would overstate the gain.
+            b, s = fnum(row["baseline_seconds"]), fnum(row["verify_seconds"])
+            if b and s and row["true_outcome"] == "found":
+                row["speedup"] = round(b / s, 2)
+            elif row["true_outcome"] != "found":
+                row["solved_where_baseline_failed"] = "yes"
         elif v in ("insufficient", "no_violation", "inconclusive"):
             row["outcome"] = "failed"
             # analytic margin, when the true cost is known
@@ -369,6 +392,8 @@ def main():
             row["outcome"] = "verify_timeout"
         elif v == "not_run":
             row["outcome"] = "not_verified"
+        elif v == "impractical":
+            row["outcome"] = "impractical"
         else:
             row["outcome"] = v or "unknown"
 
@@ -386,6 +411,7 @@ def main():
                     continue
                 rows[idx]["margin_empirical"] = factor if factor else ""
                 rows[idx]["margin_detail"] = detail
+                rows[idx]["margin_seconds"] = secs
                 done += 1
                 if done % 25 == 0 or done == len(margin_jobs):
                     print("   {}/{}  ({:.0f}m)".format(
@@ -442,6 +468,11 @@ def main():
                 print("   {:<22} {}/{}  ({:.1f}%)".format(
                     "usable rate", w, len(scored), 100.0 * w / len(scored)))
 
+            solved = [r for r in sub if r.get("solved_where_baseline_failed") == "yes"]
+            if solved:
+                print("\n   solved where the incremental search did not: {}".format(
+                    len(solved)))
+
             # ---- abstention ----
             aw = sum(1 for r in sub if r["outcome"] == "abstain_warranted")
             au = sum(1 for r in sub if r["outcome"] == "abstain_unwarranted")
@@ -465,6 +496,27 @@ def main():
                         f, c, 100.0 * c / len(tight)))
             else:
                 print("   no working predictions to measure")
+
+            timed = [r for r in sub if r["outcome"] == "works" and r["speedup"] != ""]
+            print("\nTIME  (working predictions with a finished baseline, n={})".format(
+                len(timed)))
+            if timed:
+                sp = sorted(float(r["speedup"]) for r in timed)
+                print("   speedup over iterative deepening: median={:.1f}x  "
+                      "p25={:.1f}x  p75={:.1f}x  max={:.1f}x".format(
+                    sp[len(sp) // 4], sp[len(sp) // 2],
+                    sp[3 * len(sp) // 4], sp[-1]))
+                print("   by k* band (iterative deepening pays for every k below")
+                print("   the answer, so the saving grows with depth):")
+                for lo, hi in ((1, 5), (6, 20), (21, 100), (101, 10 ** 9)):
+                    band = sorted(float(r["speedup"]) for r in timed
+                                  if lo <= (num(r["true_kstar"]) or 0) <= hi)
+                    if band:
+                        print("      k* {:>4}-{:<6} n={:<4} median={:.1f}x".format(
+                            lo, hi if hi < 10 ** 9 else "+", len(band),
+                            band[len(band) // 2]))
+            else:
+                print("   none")
 
             # ---- margin, failed predictions only ----
             failed = [r for r in sub if r["outcome"] == "failed"]
@@ -515,6 +567,8 @@ def main():
                     w = sum(1 for r in cs if r["outcome"] == "works")
                     print("   {:<8} {}/{} worked ({:.1f}%)".format(
                         label, w, len(cs), 100.0 * w / len(cs)))
+
+
 
     summarise(rows, a.margins, a.no_verify)
     print("\nscores -> {}".format(a.out))
