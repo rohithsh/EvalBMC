@@ -1,0 +1,193 @@
+nohup: ignoring input
+predictions: 2457   ground-truth rows: 2457
+
+step 1: verifying 1500 predicted bounds
+   25/1500  (10m)
+   50/1500  (11m)
+   75/1500  (11m)
+   100/1500  (11m)
+   125/1500  (11m)
+   150/1500  (11m)
+   175/1500  (28m)
+   200/1500  (39m)
+   225/1500  (39m)
+   250/1500  (42m)
+   275/1500  (42m)
+   300/1500  (42m)
+   325/1500  (43m)
+   350/1500  (43m)
+   375/1500  (52m)
+   400/1500  (52m)
+   425/1500  (52m)
+   450/1500  (52m)
+   475/1500  (53m)
+   500/1500  (53m)
+   525/1500  (53m)
+   550/1500  (54m)
+   575/1500  (54m)
+   600/1500  (55m)
+   625/1500  (55m)
+   650/1500  (56m)
+   675/1500  (63m)
+   700/1500  (63m)
+   725/1500  (64m)
+   750/1500  (69m)
+   775/1500  (76m)
+   800/1500  (84m)
+   825/1500  (84m)
+   850/1500  (85m)
+   875/1500  (95m)
+   900/1500  (105m)
+   925/1500  (113m)
+   950/1500  (120m)
+   975/1500  (124m)
+   1000/1500  (126m)
+   1025/1500  (136m)
+   1050/1500  (138m)
+   1075/1500  (152m)
+   1100/1500  (166m)
+   1125/1500  (169m)
+   1150/1500  (169m)
+   1175/1500  (176m)
+   1200/1500  (192m)
+   1225/1500  (208m)
+   1250/1500  (217m)
+   1275/1500  (235m)
+   1300/1500  (241m)
+   1325/1500  (241m)
+   1350/1500  (241m)
+   1375/1500  (247m)
+   1400/1500  (262m)
+   1425/1500  (263m)
+   1450/1500  (265m)
+   1475/1500  (266m)
+   1500/1500  (268m)
+
+step 2: scaling 1135 failed predictions by [1.5, 2.0, 4.0]
+
+====================================================================
+PREDICTIONS: 2457 total
+====================================================================
+   unsafe   722
+   safe     1735
+
+####################################################################
+# UNSAFE PROGRAMS  (n=722)
+#   k* is the depth at which the violation first appears
+####################################################################
+
+OUTCOME
+   failed                   472  (65.4%)
+   works                     66  (9.1%)
+   impractical               56  (7.8%)
+   verify_timeout            48  (6.6%)
+   abstain_warranted         37  (5.1%)
+   abstain_unverified        25  (3.5%)
+   abstain_unwarranted        7  (1.0%)
+   other_property             7  (1.0%)
+   no_prediction              4  (0.6%)
+   usable rate            66/538  (12.3%)
+
+   solved where the incremental search did not: 13
+
+ABSTENTION
+   warranted   (no finite bound can exist) : 37
+   unwarranted (a finite k* was found)     : 7
+   unverified  (k* search timed out)       : 25
+
+TIGHTNESS  (working predictions only, n=16)
+   median=1.07  p25=1.00  p75=1.67  max=6.8
+   within  1.0x of k*:    8 (50.0%)
+   within  1.5x of k*:   12 (75.0%)
+   within  2.0x of k*:   13 (81.2%)
+   within 10.0x of k*:   16 (100.0%)
+
+TIME  (working predictions with a finished baseline, n=51)
+   speedup over iterative deepening: median=0.8x  p25=1.0x  p75=2.6x  max=548.2x
+   by k* band (iterative deepening pays for every k below
+   the answer, so the saving grows with depth):
+      k*    1-5      n=7    median=3.3x
+      k*    6-20     n=8    median=5.4x
+      k*   21-100    n=1    median=5.6x
+
+MARGIN  (failed predictions only, n=472)
+   needed cost multiplier, where k* is known (n=108):
+      median=1.43  p75=2.00  p90=11.00  max=151.5
+   measured by scaling the BOUND and re-running CBMC:
+      1.5x worked for    0/472  (0.0%)
+      2.0x worked for    0/472  (0.0%)
+      4.0x worked for    0/472  (0.0%)
+   (scaling each bound by f raises cost by about f^depth, so the empirical rate exceeds what the cost ratio implies)
+
+BY LOOP CATEGORY
+   constant         13/115 worked (11.3%)
+   input-bounded    0/105 worked (0.0%)
+   data-dependent   44/179 worked (24.6%)
+   mixed            9/139 worked (6.5%)
+
+BY LOOP COUNT
+   single   43/215 worked (20.0%)
+   double   10/112 worked (8.9%)
+   multi    13/211 worked (6.2%)
+
+####################################################################
+# SAFE PROGRAMS  (n=1735)
+#   k* is the depth at which every loop is exhausted and the property is proved
+####################################################################
+
+OUTCOME
+   failed                   663  (38.2%)
+   impractical              338  (19.5%)
+   abstain_warranted        252  (14.5%)
+   abstain_unverified       227  (13.1%)
+   verify_timeout           125  (7.2%)
+   works                    101  (5.8%)
+   other_property            18  (1.0%)
+   no_prediction              7  (0.4%)
+   abstain_unwarranted        4  (0.2%)
+   usable rate            101/764  (13.2%)
+
+   solved where the incremental search did not: 6
+
+ABSTENTION
+   warranted   (no finite bound can exist) : 252
+   unwarranted (a finite k* was found)     : 4
+   unverified  (k* search timed out)       : 227
+
+TIGHTNESS  (working predictions only, n=43)
+   median=1.00  p25=1.00  p75=1.00  max=8.3
+   within  1.0x of k*:   34 (79.1%)
+   within  1.5x of k*:   37 (86.0%)
+   within  2.0x of k*:   40 (93.0%)
+   within 10.0x of k*:   43 (100.0%)
+
+TIME  (working predictions with a finished baseline, n=92)
+   speedup over iterative deepening: median=0.9x  p25=1.4x  p75=2.7x  max=75.2x
+   by k* band (iterative deepening pays for every k below
+   the answer, so the saving grows with depth):
+      k*    1-5      n=21   median=1.9x
+      k*    6-20     n=16   median=6.6x
+      k*   21-100    n=4    median=26.3x
+      k*  101-+      n=2    median=75.2x
+
+MARGIN  (failed predictions only, n=663)
+   needed cost multiplier, where k* is known (n=390):
+      median=1.20  p75=1.55  p90=2.00  max=56.3
+   measured by scaling the BOUND and re-running CBMC:
+      1.5x worked for    0/663  (0.0%)
+      2.0x worked for    0/663  (0.0%)
+      4.0x worked for    0/663  (0.0%)
+   (scaling each bound by f raises cost by about f^depth, so the empirical rate exceeds what the cost ratio implies)
+
+BY LOOP CATEGORY
+   constant         6/262 worked (2.3%)
+   input-bounded    1/31 worked (3.2%)
+   data-dependent   92/397 worked (23.2%)
+   mixed            2/74 worked (2.7%)
+
+BY LOOP COUNT
+   single   84/359 worked (23.4%)
+   double   11/221 worked (5.0%)
+   multi    6/184 worked (3.3%)
+
+scores -> results/scores_llm_full.csv

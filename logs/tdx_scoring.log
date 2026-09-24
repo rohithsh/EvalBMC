@@ -1,0 +1,122 @@
+predictions: 789   ground-truth rows: 789
+
+step 1: verifying 640 predicted bounds
+   25/640  (11m)
+   50/640  (21m)
+   75/640  (26m)
+   100/640  (38m)
+   125/640  (53m)
+   150/640  (64m)
+   175/640  (73m)
+   200/640  (77m)
+   225/640  (89m)
+   250/640  (99m)
+   275/640  (101m)
+   300/640  (105m)
+   325/640  (115m)
+   350/640  (124m)
+   375/640  (136m)
+   400/640  (146m)
+   425/640  (148m)
+   450/640  (150m)
+   475/640  (152m)
+   500/640  (155m)
+   525/640  (157m)
+   550/640  (161m)
+   575/640  (166m)
+   600/640  (173m)
+   625/640  (184m)
+   640/640  (195m)
+
+step 2: scaling 455 failed predictions by [1.5, 2.0, 4.0]
+
+====================================================================
+PREDICTIONS: 789 total
+====================================================================
+   unsafe   620
+   safe     169
+
+####################################################################
+# UNSAFE PROGRAMS  (n=620)
+#   k* is the depth at which the violation first appears
+####################################################################
+
+OUTCOME
+   failed                   375  (60.5%)
+   no_prediction             94  (15.2%)
+   works                     79  (12.7%)
+   verify_timeout            57  (9.2%)
+   abstain_unverified         9  (1.5%)
+   impractical                4  (0.6%)
+   abstain_warranted          2  (0.3%)
+   usable rate            79/454  (17.4%)
+
+ABSTENTION
+   warranted   (no finite bound can exist) : 2
+   unwarranted (a finite k* was found)     : 0
+   unverified  (k* search timed out)       : 9
+
+TIGHTNESS  (working predictions only, n=0)
+   no working predictions to measure
+
+TIME  (working predictions with a finished baseline, n=79)
+   speedup over iterative deepening: median=1.0x  p25=1.1x  p75=1.1x  max=1.2x
+   by k* band (iterative deepening pays for every k below
+   the answer, so the saving grows with depth):
+
+MARGIN  (failed predictions only, n=375)
+   measured by scaling the BOUND and re-running CBMC:
+      1.5x worked for    0/375  (0.0%)
+      2.0x worked for    0/375  (0.0%)
+      4.0x worked for    0/375  (0.0%)
+   (scaling each bound by f raises cost by about f^depth, so the empirical rate exceeds what the cost ratio implies)
+
+BY LOOP CATEGORY
+   constant         27/27 worked (100.0%)
+   mixed            52/172 worked (30.2%)
+
+BY LOOP COUNT
+   double   10/10 worked (100.0%)
+   multi    69/189 worked (36.5%)
+
+####################################################################
+# SAFE PROGRAMS  (n=169)
+#   k* is the depth at which every loop is exhausted and the property is proved
+####################################################################
+
+OUTCOME
+   failed                    80  (47.3%)
+   verify_timeout            44  (26.0%)
+   no_prediction             28  (16.6%)
+   abstain_unverified        11  (6.5%)
+   works                      5  (3.0%)
+   abstain_warranted          1  (0.6%)
+   usable rate            5/85  (5.9%)
+
+ABSTENTION
+   warranted   (no finite bound can exist) : 1
+   unwarranted (a finite k* was found)     : 0
+   unverified  (k* search timed out)       : 11
+
+TIGHTNESS  (working predictions only, n=0)
+   no working predictions to measure
+
+TIME  (working predictions with a finished baseline, n=5)
+   speedup over iterative deepening: median=1.0x  p25=1.0x  p75=1.1x  max=1.2x
+   by k* band (iterative deepening pays for every k below
+   the answer, so the saving grows with depth):
+
+MARGIN  (failed predictions only, n=80)
+   measured by scaling the BOUND and re-running CBMC:
+      1.5x worked for    0/80  (0.0%)
+      2.0x worked for    0/80  (0.0%)
+      4.0x worked for    0/80  (0.0%)
+   (scaling each bound by f raises cost by about f^depth, so the empirical rate exceeds what the cost ratio implies)
+
+BY LOOP CATEGORY
+   mixed            5/19 worked (26.3%)
+
+BY LOOP COUNT
+   multi    5/19 worked (26.3%)
+
+scores -> results/tdx_scores.csv
