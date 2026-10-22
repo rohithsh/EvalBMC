@@ -1,48 +1,40 @@
 #!/usr/bin/env python3
 """
-score_predictions.py  (v2)
+score_predictions.py
 
-Score predicted unrolling bounds. Verification comes first and gates everything
-else, because in bounded model checking a bound either suffices or it does not
--- there is no partial credit. A prediction of 11 against a true bound of 12 is
-not "92% right", it simply fails.
+Score predicted unrolling bounds two ways.
 
-  STEP 1 -- DOES THE BOUND WORK?
-      CBMC is run at the predicted bound and judged under the same soundness
-      rule that produced the ground truth: the bound works if a property-matched
-      violation is reported (unsafe program) or the property is proved (safe
-      program), in both cases with NO unwinding assertion failing.
+  SCORE A -- agreement with the ground truth.
+      The predicted bound and the ground-truth bound are both converted to a
+      COST (total loop-body unrollings: each loop's bound multiplied by the
+      bounds of every enclosing loop, summed over loops). Comparing costs lets a
+      per-loop schedule be measured against a uniform bound on the same scale,
+      which a raw integer comparison cannot do.
+      Reported as exact / over / under, plus a tightness ratio
+      pred_cost / true_cost, where 1.0 is ideal.
 
-      CBMC is skipped only when the prediction is IDENTICAL to the ground-truth
-      bound, where the answer is already known. Equal COST is not enough: two
-      different schedules can cost the same while allocating depth differently.
+  SCORE B -- does the predicted bound actually work?
+      CBMC is run at the predicted bound and the result is checked under the
+      same soundness rule used to derive the ground truth: the bound works if a
+      property-matched violation is reported (unsafe program) or the property is
+      proved (safe program), in both cases with NO unwinding assertion failing.
 
-  STEP 2a -- TIGHTNESS, for predictions that worked.
-      tightness = predicted cost / true cost, where cost is the total number of
-      loop-body unrollings (each loop's bound multiplied by the bounds of every
-      enclosing loop, summed over loops). Cost puts a per-loop schedule and a
-      uniform bound on the same scale. 1.0 is ideal; above 1.0 the prediction
-      overshoots and the solver does more work than necessary.
+      CBMC is run only when it can tell us something new:
+        prediction == k*        -> skipped, it is known to work
+        prediction != k*        -> run, a different bound may still work
+        no finite k* was found  -> run by default, since Score A is undefined
+                                   and this is the only measurement available
 
-      Predictions that did not work have no tightness. Reporting one would
-      reward a near-miss that is useless in practice.
+      This matters because k* is undefined for the ~1700 program-property pairs
+      whose search timed out. Score B covers them; Score A cannot.
 
-  STEP 2b -- MARGIN, for predictions that did not work.
-      A bound that fails is almost always slightly too small. The margin asks
-      what multiplier would have been enough:
+  ABSTENTION
+      An "unbounded" reply is warranted when no finite k* exists and unwarranted
+      when one does. Scoring them together would flatter a predictor that never
+      answers.
 
-        analytic   when a finite k* is known: true cost / predicted cost
-        empirical  the prediction is scaled by each factor in --margins and
-                   re-run through CBMC, ascending, stopping at the first that
-                   works. This covers the programs where k* was never derived,
-                   where the analytic margin is undefined.
-
-      The result answers a practical question: does multiplying a predicted
-      bound by a small factor turn a failing predictor into a usable one, and
-      what does that cost in extra unrolling?
-
-Ground truth comes from derive_kstar_all.py's CSV, and the CBMC invocation and
-soundness rule are imported from that script so there is a single definition.
+Ground truth comes from derive_kstar_all.py's CSV, and the CBMC invocation is
+imported from that script so the soundness rule has a single definition.
 
 Usage:
   python3 score_predictions.py \
@@ -51,21 +43,28 @@ Usage:
       --json    datasets/cleaned/loops.json \
       --dataset datasets/cleaned/svcomp_clean \
       --out     results/scores_blind.csv \
-      [--jobs 8] [--verify-timeout 600] [--margins 1.5 2 4] [--no-verify]
+      [--jobs 8] [--verify-timeout 600] [--no-verify]
 """
 
 import argparse
 import csv
 import json
-import math
 import sys
 import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-import derive_kstar as kstar
 
-MAX_PRACTICAL_K = 10000
+# The CBMC call and the soundness rule live in the derivation script; importing
+# them keeps one definition rather than a copy that can drift.
+try:
+    import derive_kstar as kstar
+except ImportError:
+    print("cannot import derive_kstar_all.py -- put it beside this script "
+          "(rename derive_kstar_all_v2.py if needed)", file=sys.stderr)
+    raise
+
+
 # ------------------------------------------------------------------- helpers
 
 def num(x):
@@ -74,13 +73,9 @@ def num(x):
     except (TypeError, ValueError):
         return None
 
-def fnum(x):
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return None
 
 def parse_schedule_field(s):
+    """'main.0:3;main.1:200' -> {'main.0':3,'main.1':200}"""
     out = {}
     for part in (s or "").split(";"):
         if ":" in part:
@@ -98,45 +93,36 @@ def loop_structure(rec):
 
 
 def pred_bound(parsed):
+    """(kind, uniform_k_or_None, schedule_or_None)"""
     kind = parsed.get("kind")
     if kind == "uniform":
         return "uniform", parsed.get("k"), None
     if kind == "schedule":
-        return "schedule", None, dict(parsed.get("schedule") or {})
+        return "schedule", None, {k: v for k, v in (parsed.get("schedule") or {}).items()}
     return "unbounded", None, None
-
-
-def normalise_schedule(sched, loop_ids):
-    """Every loop named; loops the model omitted default to 0."""
-    full = {lid: int(sched.get(lid, 0)) for lid in loop_ids}
-    for lid, v in (sched or {}).items():
-        full.setdefault(lid, int(v))
-    return full
 
 
 def cost_of(kind, k, sched, loop_ids, parents):
     if kind == "uniform" and k is not None:
         return kstar.uniform_cost(k, loop_ids, parents)
     if kind == "schedule" and sched:
-        return kstar.loop_cost(sched, parents)
+        # a schedule may name loops that do not exist, or omit some; unnamed
+        # loops fall back to 0 under --unwindset with --unwind 0
+        full = {lid: sched.get(lid, 0) for lid in loop_ids}
+        for lid, v in sched.items():
+            full.setdefault(lid, v)
+        return kstar.loop_cost(full, parents)
     return None
-
-
-def scale(kind, k, sched, factor):
-    """Scale a bound by a factor, rounding up; a zero bound becomes one."""
-    if kind == "uniform":
-        return max(1, int(math.ceil((k or 0) * factor))) if k is not None else None, None
-    if kind == "schedule":
-        return None, {lid: max(1, int(math.ceil(v * factor)))
-                      for lid, v in sched.items()}
-    return None, None
 
 
 # ------------------------------------------------------------ CBMC verify
 
-def run_bound(cfile, data_model, prop, verdict, kind, k, sched, timeout):
-    """One CBMC run at a given bound. Returns (status, detail, seconds)."""
-    t0 = time.time()
+def verify(job):
+    """
+    Run CBMC once at the predicted bound and report whether it is conclusive
+    under the soundness rule.
+    """
+    (cfile, data_model, prop, verdict, kind, k, sched, timeout) = job
     try:
         if kind == "uniform":
             st, out = kstar.cbmc_run(cfile, data_model, prop,
@@ -145,79 +131,62 @@ def run_bound(cfile, data_model, prop, verdict, kind, k, sched, timeout):
             st, out = kstar.cbmc_run(cfile, data_model, prop,
                                      unwind=0, unwindset=sched, timeout=timeout)
         else:
-            return "not_applicable", "", 0.0
+            return "not_applicable", ""
     except Exception as e:
-        return "error", str(e)[:80], round(time.time() - t0, 2)
+        return "error", str(e)[:80]
 
-    elapsed = round(time.time() - t0, 2)
     if st != "ok":
-        return "timeout", "", elapsed
+        return "timeout", ""
+
     res, failing, _, other = kstar.analyse(out, prop)
     if kstar.is_done(verdict, res):
-        return "works", failing, elapsed
+        return "works", failing
     if res == "unwind":
-        return "insufficient", "", elapsed
+        return "insufficient", ""        # bound too small: loop cut short
     if res == "success" and verdict == "unsafe":
-        return "no_violation", "", elapsed
+        return "no_violation", ""        # sound, but the bug was not reached
     if res == "other":
-        return "other_property", other, elapsed
-    return "inconclusive", "", elapsed
-
-
-def verify_base(job):
-    idx, args = job
-    return idx, run_bound(*args)
-
-
-def verify_margins(job):
-    """
-    Scale the prediction by each factor in ascending order, stopping at the
-    first that works. Sequential inside one worker so the early exit is real.
-    """
-    idx, (cfile, dm, prop, verdict, kind, k, sched, timeout, factors) = job
-    tried, total = [], 0.0
-    for f in factors:
-        sk, ss = scale(kind, k, sched, f)
-        st, _, secs = run_bound(cfile, dm, prop, verdict, kind, sk, ss, timeout)
-        total += secs
-        tried.append("{}x:{}".format(f, st))
-        if st == "works":
-            return idx, f, st, ";".join(tried), round(total, 2)
-    return idx, None, "none_worked", ";".join(tried), round(total, 2)
-
-def provably_unbounded(rec):
-    """
-    Returns True when at least one loop admits no finite bound, so no
-    unwind depth ever causes a violation in its unwinding assertion.
-    """
-    for l in rec.get("loops", []):
-        if l.get("category") == "input-bounded" and not l.get("bound_constrained"):
-            return True
-        if "re-draws nondet" in (l.get("reason") or ""):
-            return True
-    return False
+        return "other_property", other
+    return "inconclusive", ""
 
 
 # ------------------------------------------------------------------- main
 
+
+def model_name(p):
+    """
+    The model behind a prediction row. predict_bounds.py writes a string;
+    predict_syntactic.py writes {"provider": ..., "model": ...}.
+    """
+    m = p.get("model")
+    if isinstance(m, dict):
+        return str(m.get("model") or "")
+    return str(m or "")
+
+
+def provider_name(p):
+    m = p.get("model")
+    if isinstance(m, dict) and m.get("provider"):
+        return str(m["provider"])
+    return str(p.get("provider") or "")
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pred", required=True)
-    ap.add_argument("--kstar", required=True)
-    ap.add_argument("--json", required=True)
-    ap.add_argument("--dataset", required=True)
+    ap.add_argument("--pred", required=True, help="predictions JSONL")
+    ap.add_argument("--kstar", required=True, help="derive_kstar_all CSV")
+    ap.add_argument("--json", required=True, help="loops.json")
+    ap.add_argument("--dataset", required=True, help="svcomp_clean")
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--verify-timeout", type=int, default=600)
-    ap.add_argument("--margins", nargs="*", type=float, default=[1.5, 2.0, 4.0],
-                    help="multipliers tried on predictions that did not work")
     ap.add_argument("--no-verify", action="store_true",
-                    help="skip all CBMC runs; only structural scores")
+                    help="Score A only; do not run CBMC")
     a = ap.parse_args()
 
     recs = {r["task"]: r for r in json.load(open(a.json))}
-    truth = {(r["task"], r["property"]): r
-             for r in csv.DictReader(open(a.kstar))}
+    truth = {}
+    for r in csv.DictReader(open(a.kstar)):
+        truth[(r["task"], r["property"])] = r
 
     preds = []
     with open(a.pred) as fh:
@@ -228,52 +197,65 @@ def main():
                 pass
     print("predictions: {}   ground-truth rows: {}".format(len(preds), len(truth)))
 
-    rows, base_jobs = [], []
+    models = {}
+    for p in preds:
+        m = model_name(p) or "(unrecorded)"
+        models[m] = models.get(m, 0) + 1
+    if len(models) == 1:
+        print("model: {}".format(next(iter(models))))
+    else:
+        print("WARNING: this file holds rows from more than one model, so the")
+        print("         headline numbers below mix them. Split it first.")
+        for m, n in sorted(models.items(), key=lambda kv: -kv[1]):
+            print("           {:<28} {} rows".format(m, n))
+
+    rows, verify_jobs = [], []
 
     for p in preds:
         task, prop = p.get("task"), p.get("property")
         rec = recs.get(task)
         gt = truth.get((task, prop))
-        plist = p.get("predictions") or []
-        parsed = plist[0].get("parsed") if plist else None
+        preds_list = p.get("predictions") or []
+        parsed = preds_list[0].get("parsed") if preds_list else None
 
         row = {
-            "task": task, "property": prop, "verdict": p.get("verdict"),
-            "category": p.get("category"), "n_loops": p.get("n_loops"),
-            "config": p.get("config", ""), "mode": p.get("mode", ""),
+            "task": task, "property": prop,
+            "verdict": p.get("verdict"), "category": p.get("category"),
+            "n_loops": p.get("n_loops"), "config": p.get("config", ""),
+            "mode": p.get("mode", "") or p.get("input_mode", ""),
+            # carried from the prediction row so a score CSV can always be
+            # attributed to the model that produced it
+            "model": model_name(p), "provider": provider_name(p),
             "pred_kind": "", "pred_k": "", "pred_schedule": "", "pred_cost": "",
             "true_outcome": "", "true_kstar": "", "true_cost": "",
-            "verified": "", "verify_detail": "", "verify_seconds": "",
-            "baseline_seconds": "", "speedup": "",
-            "solved_where_baseline_failed": "",
-            "tightness": "", "margin_analytic": "", "margin_empirical": "",
-            "margin_detail": "", "margin_seconds": "", "outcome": "",
+            "score_a": "", "tightness": "",
+            "score_b": "", "verify_detail": "", "verify_time": "",
         }
+
         if gt:
             row["true_outcome"] = gt.get("uniform_outcome", "")
             row["true_kstar"] = gt.get("uniform_kstar", "")
-            row["baseline_seconds"] = gt.get("uniform_time", "")
+            row["true_cost"] = gt.get("schedule_cost") or gt.get("uniform_cost") or ""
 
         if not parsed:
-            row["outcome"] = "no_prediction"
-            rows.append(row)
-            continue
-        if rec is None:
-            row["outcome"] = "unknown_task"
+            row["score_a"] = "no_prediction"
             rows.append(row)
             continue
 
         kind, k, sched = pred_bound(parsed)
-        loop_ids, parents = loop_structure(rec)
-        if kind == "schedule":
-            sched = normalise_schedule(sched, loop_ids)
-
         row["pred_kind"] = kind
         if kind == "uniform":
             row["pred_k"] = k
         elif kind == "schedule":
-            row["pred_schedule"] = ";".join("{}:{}".format(x, y)
-                                            for x, y in sorted(sched.items()))
+            row["pred_schedule"] = ";".join(
+                "{}:{}".format(x, y) for x, y in sorted(sched.items()))
+
+        if rec is None:
+            row["score_a"] = "unknown_task"
+            rows.append(row)
+            continue
+
+        loop_ids, parents = loop_structure(rec)
         pcost = cost_of(kind, k, sched, loop_ids, parents)
         if pcost is not None:
             row["pred_cost"] = pcost
@@ -281,143 +263,70 @@ def main():
         true_k = num(gt.get("uniform_kstar")) if gt else None
         has_truth = (gt is not None and gt.get("uniform_outcome") == "found"
                      and true_k is not None and true_k > 0)
-        if has_truth:
-            tcost = num(gt.get("schedule_cost")) or num(gt.get("uniform_cost"))
+
+        # ---- Score A ----
+        if kind == "unbounded":
+            row["score_a"] = "abstain_unwarranted" if has_truth else "abstain_warranted"
+        elif not has_truth:
+            row["score_a"] = "no_ground_truth"
+        else:
+            tcost = num(row["true_cost"])
             if tcost is None:
                 tcost = kstar.uniform_cost(true_k, loop_ids, parents)
-            row["true_cost"] = tcost
-
-        # abstention needs no verification
-        if kind == "unbounded":
-            if has_truth:
-                row["outcome"] = "abstain_unwarranted"  # a bound existed
-            elif provably_unbounded(rec):
-                row["outcome"] = "abstain_warranted"  # none can exist
+                row["true_cost"] = tcost
+            if pcost is None or tcost in (None, 0):
+                row["score_a"] = "incomparable"
             else:
-                row["outcome"] = "abstain_unverified"  # search timed out
-            row["verified"] = "not_run"
-            rows.append(row)
-            continue
+                row["tightness"] = round(pcost / float(tcost), 3)
+                if pcost == tcost:
+                    row["score_a"] = "exact"
+                elif pcost > tcost:
+                    row["score_a"] = "over"
+                else:
+                    row["score_a"] = "under"
 
-        # skip CBMC only when the bound is IDENTICAL to the ground truth --
-        # equal cost is not enough, since different schedules can cost the same
-        identical = False
-        if has_truth:
-            if kind == "uniform" and k == true_k:
-                identical = True
-            elif kind == "schedule":
-                gts = parse_schedule_field(gt.get("schedule_kstar", ""))
-                if gts and sched == normalise_schedule(gts, loop_ids):
-                    identical = True
-
-        if a.no_verify:
-            row["verified"] = "not_run"
-        elif kind == "uniform" and (k or 0) > MAX_PRACTICAL_K:
-            row["verified"] = "impractical"
-            row["verify_detail"] = "predicted k={} exceeds what CBMC can unroll".format(k)
-        elif kind == "schedule" and sched and max(sched.values()) > MAX_PRACTICAL_K:
-            row["verified"] = "impractical"
-            row["verify_detail"] = "schedule max {} exceeds what CBMC can unroll".format(
-                max(sched.values()))
+        # ---- Score B: run CBMC unless the answer is already known ----
+        if a.no_verify or kind == "unbounded":
+            row["score_b"] = "not_run"
+        elif row["score_a"] == "exact":
+            row["score_b"] = "works"          # equals k*, known to work
+            row["verify_detail"] = "equals k*, not re-run"
         else:
             cfile = Path(a.dataset) / rec["dir"] / rec["c_file"]
             if not cfile.exists():
-                row["verified"] = "missing_file"
+                row["score_b"] = "missing_file"
             else:
-                base_jobs.append((len(rows), (
+                verify_jobs.append((len(rows), (
                     cfile, rec.get("data_model", "ILP32"), prop,
-                    p.get("verdict"), kind, k, sched, a.verify_timeout)))
+                    p.get("verdict"), kind, k,
+                    {lid: sched.get(lid, 0) for lid in loop_ids} if sched else None,
+                    a.verify_timeout)))
         rows.append(row)
 
-    # ---- step 1: verify the predicted bounds -------------------------------
-    if base_jobs:
-        print("\nstep 1: verifying {} predicted bounds".format(len(base_jobs)))
-        t0, done = time.time(), 0
+    # ---- run the verifications ----
+    if verify_jobs:
+        print("verifying {} predictions with CBMC (--jobs {})".format(
+            len(verify_jobs), a.jobs))
+        t0 = time.time()
+        done = 0
         with ProcessPoolExecutor(max_workers=a.jobs) as ex:
-            futs = [ex.submit(verify_base, j) for j in base_jobs]
+            futs = {ex.submit(verify, job): idx for idx, job in verify_jobs}
             for f in as_completed(futs):
+                idx = futs[f]
+                t1 = time.time()
                 try:
-                    idx, (status, detail, secs) = f.result()
-                except Exception:
-                    continue
-                rows[idx]["verified"] = status
+                    status, detail = f.result()
+                except Exception as e:
+                    status, detail = "error", str(e)[:80]
+                rows[idx]["score_b"] = status
                 rows[idx]["verify_detail"] = detail
-                rows[idx]["verify_seconds"] = secs
                 done += 1
-                if done % 25 == 0 or done == len(base_jobs):
+                if done % 25 == 0 or done == len(verify_jobs):
                     print("   {}/{}  ({:.0f}m)".format(
-                        done, len(base_jobs), (time.time() - t0) / 60.0), flush=True)
+                        done, len(verify_jobs), (time.time() - t0) / 60.0),
+                        flush=True)
 
-    # ---- step 2a: tightness, only where the bound worked -------------------
-    margin_jobs = []
-    for idx, row in enumerate(rows):
-        if row["outcome"]:            # abstention or error, already settled
-            continue
-        v = row["verified"]
-        if v == "works":
-            row["outcome"] = "works"
-            pc, tc = num(row["pred_cost"]), num(row["true_cost"])
-            if pc is not None and tc:
-                row["tightness"] = round(pc / float(tc), 3)
-            # Speedup is only meaningful against a baseline that finished.
-            # A timed-out search gives the budget, not a completion time, so
-            # comparing against it would overstate the gain.
-            b, s = fnum(row["baseline_seconds"]), fnum(row["verify_seconds"])
-            if b and s and row["true_outcome"] == "found":
-                row["speedup"] = round(b / s, 2)
-            elif row["true_outcome"] != "found":
-                row["solved_where_baseline_failed"] = "yes"
-        elif v in ("insufficient", "no_violation", "inconclusive"):
-            row["outcome"] = "failed"
-            # analytic margin, when the true cost is known
-            pc, tc = num(row["pred_cost"]), num(row["true_cost"])
-            if pc and tc and pc < tc:
-                row["margin_analytic"] = round(tc / float(pc), 3)
-            # empirical margin: scale and re-run
-            if not a.no_verify and a.margins:
-                task, prop = row["task"], row["property"]
-                rec = recs.get(task)
-                if rec:
-                    loop_ids, _ = loop_structure(rec)
-                    kind = row["pred_kind"]
-                    k = num(row["pred_k"])
-                    sched = parse_schedule_field(row["pred_schedule"]) or None
-                    cfile = Path(a.dataset) / rec["dir"] / rec["c_file"]
-                    if cfile.exists():
-                        margin_jobs.append((idx, (
-                            cfile, rec.get("data_model", "ILP32"), prop,
-                            row["verdict"], kind, k, sched,
-                            a.verify_timeout, sorted(a.margins))))
-        elif v == "timeout":
-            row["outcome"] = "verify_timeout"
-        elif v == "not_run":
-            row["outcome"] = "not_verified"
-        elif v == "impractical":
-            row["outcome"] = "impractical"
-        else:
-            row["outcome"] = v or "unknown"
-
-    # ---- step 2b: empirical margin ----------------------------------------
-    if margin_jobs:
-        print("\nstep 2: scaling {} failed predictions by {}".format(
-            len(margin_jobs), sorted(a.margins)))
-        t0, done = time.time(), 0
-        with ProcessPoolExecutor(max_workers=a.jobs) as ex:
-            futs = [ex.submit(verify_margins, j) for j in margin_jobs]
-            for f in as_completed(futs):
-                try:
-                    idx, factor, status, detail = f.result()
-                except Exception:
-                    continue
-                rows[idx]["margin_empirical"] = factor if factor else ""
-                rows[idx]["margin_detail"] = detail
-                rows[idx]["margin_seconds"] = secs
-                done += 1
-                if done % 25 == 0 or done == len(margin_jobs):
-                    print("   {}/{}  ({:.0f}m)".format(
-                        done, len(margin_jobs), (time.time() - t0) / 60.0), flush=True)
-
-    # ---- write ------------------------------------------------------------
+    # ---- write ----
     cols = list(rows[0].keys()) if rows else []
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     with open(a.out, "w", newline="") as fh:
@@ -425,152 +334,55 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    def summarise(rows, margins, no_verify):
-        """
-        Everything is reported per verdict. A safe program and an unsafe one are
-        different prediction tasks: for a safe program k* is the loop's full trip
-        count and predicting it means counting iterations, whereas for an unsafe
-        one k* is the depth at which the violation first becomes reachable, usually
-        far below the trip count. Pooling them would average two unrelated numbers.
-        """
-        print("\n" + "=" * 68)
-        print("PREDICTIONS: {} total".format(len(rows)))
-        print("=" * 68)
-        for v in ("unsafe", "safe"):
-            n = sum(1 for r in rows if r["verdict"] == v)
-            print("   {:<8} {}".format(v, n))
-        other = [r for r in rows if r["verdict"] not in ("unsafe", "safe")]
-        if other:
-            print("   {:<8} {}".format("(other)", len(other)))
+    # ---- summary ----
+    print("\n" + "=" * 66)
+    print("SCORE A -- agreement with k* (by cost)")
+    print("=" * 66)
+    ca = Counter(r["score_a"] for r in rows)
+    for k_, v in ca.most_common():
+        print("   {:<22} {:>5}  ({:.1f}%)".format(k_, v, 100.0 * v / len(rows)))
 
-        for v in ("unsafe", "safe"):
-            sub = [r for r in rows if r["verdict"] == v]
-            if not sub:
-                continue
+    tight = sorted(float(r["tightness"]) for r in rows if r["tightness"] != "")
+    if tight:
+        print("\n   tightness (pred cost / true cost), n={}".format(len(tight)))
+        print("      median={:.2f}  p25={:.2f}  p75={:.2f}  max={:.1f}".format(
+            tight[len(tight) // 2], tight[len(tight) // 4],
+            tight[3 * len(tight) // 4], tight[-1]))
+        within = lambda f: sum(1 for x in tight if 1 / f <= x <= f)
+        for f in (1.5, 2.0, 10.0):
+            print("      within {:>4}x of k*: {:>4} ({:.1f}%)".format(
+                f, within(f), 100.0 * within(f) / len(tight)))
 
-            print("\n" + "#" * 68)
-            print("# {} PROGRAMS  (n={})".format(v.upper(), len(sub)))
-            if v == "unsafe":
-                print("#   k* is the depth at which the violation first appears")
-            else:
-                print("#   k* is the depth at which every loop is exhausted "
-                      "and the property is proved")
-            print("#" * 68)
+    print("\n" + "=" * 66)
+    print("SCORE B -- does the predicted bound work?")
+    print("=" * 66)
+    cb = Counter(r["score_b"] for r in rows if r["score_b"])
+    tot_b = sum(cb.values()) or 1
+    for k_, v in cb.most_common():
+        print("   {:<22} {:>5}  ({:.1f}%)".format(k_, v, 100.0 * v / tot_b))
 
-            # ---- outcomes ----
-            print("\nOUTCOME")
-            for k_, c in Counter(r["outcome"] for r in sub).most_common():
-                print("   {:<22} {:>5}  ({:.1f}%)".format(k_, c, 100.0 * c / len(sub)))
+    covered = [r for r in rows if r["score_b"] in
+               ("works", "insufficient", "no_violation", "inconclusive",
+                "other_property", "timeout")]
+    if covered:
+        works = sum(1 for r in covered if r["score_b"] == "works")
+        print("\n   usable rate: {}/{} ({:.1f}%)".format(
+            works, len(covered), 100.0 * works / len(covered)))
+        no_gt = [r for r in covered if r["score_a"] == "no_ground_truth"]
+        if no_gt:
+            w2 = sum(1 for r in no_gt if r["score_b"] == "works")
+            print("   of which where k* was never derived: {}/{} worked "
+                  "({:.1f}%)".format(w2, len(no_gt), 100.0 * w2 / len(no_gt)))
 
-            scored = [r for r in sub if r["outcome"] in ("works", "failed")]
-            if scored:
-                w = sum(1 for r in scored if r["outcome"] == "works")
-                print("   {:<22} {}/{}  ({:.1f}%)".format(
-                    "usable rate", w, len(scored), 100.0 * w / len(scored)))
+    print("\nby loop category (Score B):")
+    for cat in ("constant", "input-bounded", "data-dependent", "mixed"):
+        sub = [r for r in rows if r["category"] == cat and r["score_b"]
+               and r["score_b"] != "not_run"]
+        if sub:
+            w = sum(1 for r in sub if r["score_b"] == "works")
+            print("   {:<16} {}/{} worked ({:.1f}%)".format(
+                cat, w, len(sub), 100.0 * w / len(sub)))
 
-            solved = [r for r in sub if r.get("solved_where_baseline_failed") == "yes"]
-            if solved:
-                print("\n   solved where the incremental search did not: {}".format(
-                    len(solved)))
-
-            # ---- abstention ----
-            aw = sum(1 for r in sub if r["outcome"] == "abstain_warranted")
-            au = sum(1 for r in sub if r["outcome"] == "abstain_unwarranted")
-            an = sum(1 for r in sub if r["outcome"] == "abstain_unverified")
-            if aw or au or an:
-                print("\nABSTENTION")
-                print("   warranted   (no finite bound can exist) : {}".format(aw))
-                print("   unwarranted (a finite k* was found)     : {}".format(au))
-                print("   unverified  (k* search timed out)       : {}".format(an))
-
-            # ---- tightness, working predictions only ----
-            tight = sorted(float(r["tightness"]) for r in sub if r["tightness"] != "")
-            print("\nTIGHTNESS  (working predictions only, n={})".format(len(tight)))
-            if tight:
-                print("   median={:.2f}  p25={:.2f}  p75={:.2f}  max={:.1f}".format(
-                    tight[len(tight) // 2], tight[len(tight) // 4],
-                    tight[3 * len(tight) // 4], tight[-1]))
-                for f in (1.0, 1.5, 2.0, 10.0):
-                    c = sum(1 for x in tight if x <= f)
-                    print("   within {:>4}x of k*: {:>4} ({:.1f}%)".format(
-                        f, c, 100.0 * c / len(tight)))
-            else:
-                print("   no working predictions to measure")
-
-            timed = [r for r in sub if r["outcome"] == "works" and r["speedup"] != ""]
-            print("\nTIME  (working predictions with a finished baseline, n={})".format(
-                len(timed)))
-            if timed:
-                sp = sorted(float(r["speedup"]) for r in timed)
-                print("   speedup over iterative deepening: median={:.1f}x  "
-                      "p25={:.1f}x  p75={:.1f}x  max={:.1f}x".format(
-                    sp[len(sp) // 4], sp[len(sp) // 2],
-                    sp[3 * len(sp) // 4], sp[-1]))
-                print("   by k* band (iterative deepening pays for every k below")
-                print("   the answer, so the saving grows with depth):")
-                for lo, hi in ((1, 5), (6, 20), (21, 100), (101, 10 ** 9)):
-                    band = sorted(float(r["speedup"]) for r in timed
-                                  if lo <= (num(r["true_kstar"]) or 0) <= hi)
-                    if band:
-                        print("      k* {:>4}-{:<6} n={:<4} median={:.1f}x".format(
-                            lo, hi if hi < 10 ** 9 else "+", len(band),
-                            band[len(band) // 2]))
-            else:
-                print("   none")
-
-            # ---- margin, failed predictions only ----
-            failed = [r for r in sub if r["outcome"] == "failed"]
-            print("\nMARGIN  (failed predictions only, n={})".format(len(failed)))
-            if failed:
-                ana = sorted(float(r["margin_analytic"]) for r in failed
-                             if r["margin_analytic"] != "")
-                if ana:
-                    print("   needed cost multiplier, where k* is known (n={}):"
-                          .format(len(ana)))
-                    print("      median={:.2f}  p75={:.2f}  p90={:.2f}  max={:.1f}".format(
-                        ana[len(ana) // 2], ana[3 * len(ana) // 4],
-                        ana[min(int(0.9 * len(ana)), len(ana) - 1)], ana[-1]))
-                if not no_verify and margins:
-                    emp = [r for r in failed if r["margin_empirical"] != ""]
-                    print("   measured by scaling the BOUND and re-running CBMC:")
-                    for f in sorted(margins):
-                        c = sum(1 for r in emp if float(r["margin_empirical"]) <= f)
-                        print("      {}x worked for {:>4}/{}  ({:.1f}%)".format(
-                            f, c, len(failed), 100.0 * c / len(failed)))
-                    none = sum(1 for r in failed
-                               if r["margin_detail"] and r["margin_empirical"] == "")
-                    if none:
-                        print("      no factor tried worked: {}".format(none))
-                    print("   (scaling each bound by f raises cost by about f^depth,"
-                          " so the empirical rate exceeds what the cost ratio implies)")
-            else:
-                print("   none")
-
-            # ---- by loop category ----
-            print("\nBY LOOP CATEGORY")
-            for cat in ("constant", "input-bounded", "data-dependent", "mixed"):
-                cs = [r for r in sub if r["category"] == cat
-                      and r["outcome"] in ("works", "failed")]
-                if cs:
-                    w = sum(1 for r in cs if r["outcome"] == "works")
-                    print("   {:<16} {}/{} worked ({:.1f}%)".format(
-                        cat, w, len(cs), 100.0 * w / len(cs)))
-
-            # ---- by loop count ----
-            print("\nBY LOOP COUNT")
-            for label, pred in (("single", lambda n: n == 1),
-                                ("double", lambda n: n == 2),
-                                ("multi", lambda n: n >= 3)):
-                cs = [r for r in sub if r["outcome"] in ("works", "failed")
-                      and str(r["n_loops"]).isdigit() and pred(int(r["n_loops"]))]
-                if cs:
-                    w = sum(1 for r in cs if r["outcome"] == "works")
-                    print("   {:<8} {}/{} worked ({:.1f}%)".format(
-                        label, w, len(cs), 100.0 * w / len(cs)))
-
-
-
-    summarise(rows, a.margins, a.no_verify)
     print("\nscores -> {}".format(a.out))
     return 0
 
