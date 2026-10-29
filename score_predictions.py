@@ -8,7 +8,10 @@ Score predicted unrolling bounds two ways.
       The predicted bound and the ground-truth bound are both converted to a
       COST (total loop-body unrollings: each loop's bound multiplied by the
       bounds of every enclosing loop, summed over loops), and compared:
-      exact / over / under, plus a tightness ratio pred_cost / true_cost.
+      exact / over / under (and "mixed" for a schedule with some loops above
+      and some below), against the uniform k* for a single bound and against
+      the per-loop k* schedule for a schedule, plus a tightness ratio
+      pred_cost / reference cost.
       Note: the cost model is a static estimate. It agrees with CBMC for
       ordinary loops but overstates loops CBMC never reaches, so report the
       measured columns (steps, variables, clauses, seconds) for any claim
@@ -296,7 +299,7 @@ def main():
             "model": model_name(p), "provider": provider_name(p),
             "pred_kind": "", "pred_k": "", "pred_schedule": "", "pred_cost": "",
             "true_outcome": "", "true_kstar": "", "true_cost": "",
-            "score_a": "", "tightness": "",
+            "score_a": "", "reference": "", "tightness": "",
             "score_b": "", "verify_detail": "", "cached": "",
             "verify_seconds": "", "steps": "", "variables": "", "clauses": "",
             "baseline_seconds": "", "predict_seconds": "",
@@ -349,16 +352,49 @@ def main():
         elif not has_truth:
             row["score_a"] = "no_ground_truth"
         else:
-            tcost = num(row["true_cost"])
-            if tcost is None:
-                tcost = kstar.uniform_cost(true_k, loop_ids, parents)
-                row["true_cost"] = tcost
-            if pcost is None or tcost in (None, 0):
-                row["score_a"] = "incomparable"
+            # Like is compared with like. A single bound is compared with the
+            # uniform k*. A schedule is compared loop by loop with the per-loop
+            # k* schedule (or with k* on every loop when no schedule was
+            # derived). Previously both were compared, by the static cost
+            # model, with the per-loop schedule's cost whenever one existed,
+            # so a single bound equal to k* on a multi-loop program counted as
+            # "over" -- and the cost model overcharges unreached loops.
+            ref_sched = None
+            if kind == "schedule":
+                if gt.get("schedule_outcome") in ("found", "same_as_uniform") \
+                        and gt.get("schedule_kstar"):
+                    ref_sched = {}
+                    for part in gt["schedule_kstar"].split(";"):
+                        lid, _, v = part.rpartition(":")
+                        if lid and num(v) is not None:
+                            ref_sched[lid] = num(v)
+                    row["reference"] = "per-loop k*"
+                else:
+                    row["reference"] = "uniform k* on every loop"
+                ref = {lid: (ref_sched.get(lid, 0) if ref_sched is not None
+                             else true_k) for lid in loop_ids}
+                pred = {lid: sched.get(lid, 0) for lid in loop_ids}
+                tcost = kstar.loop_cost(ref, parents)
+                diffs = [pred[l] - ref[l] for l in loop_ids]
+                if not diffs:
+                    verdict_a = "incomparable"
+                elif all(d == 0 for d in diffs):
+                    verdict_a = "exact"
+                elif all(d >= 0 for d in diffs):
+                    verdict_a = "over"
+                elif all(d <= 0 for d in diffs):
+                    verdict_a = "under"
+                else:
+                    verdict_a = "mixed"      # some loops above, some below
             else:
+                row["reference"] = "uniform k*"
+                tcost = kstar.uniform_cost(true_k, loop_ids, parents)
+                verdict_a = ("exact" if k == true_k else
+                             "over" if k > true_k else "under")
+            row["true_cost"] = tcost
+            row["score_a"] = verdict_a
+            if pcost is not None and tcost:
                 row["tightness"] = round(pcost / float(tcost), 3)
-                row["score_a"] = ("exact" if pcost == tcost else
-                                  "over" if pcost > tcost else "under")
 
         # ---- Score B ----
         full_sched = ({lid: sched.get(lid, 0) for lid in loop_ids}
