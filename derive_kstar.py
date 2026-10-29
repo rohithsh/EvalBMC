@@ -11,13 +11,21 @@ uniform k*   one depth for every loop (--unwind k)
 schedule k*  one depth per loop (--unwindset L1:k1,...), multi-loop only
              (on a single-loop program the two are the same measurement)
 
-THE SOUNDNESS RULE
+THE SUFFICIENCY RULE (two variants, --unsafe-rule)
   A result counts only when NO unwinding assertion fails. A failing unwinding
   assertion means some loop was cut short, so the model is a truncated program
   and anything it reports may be spurious.
 
-    unsafe: k* = smallest bound with a property-matched violation and no
-            unwinding assertion failing.
+    unsafe, --unsafe-rule exposure (default, the paper's definition):
+            k* = smallest bound at which CBMC reports a property-matched
+            violation, whether or not some unwinding assertion also fails.
+            A BMC counterexample is a real execution of the program, so a
+            violation found at depth k is a genuine bug even if other
+            executions would need more unwinding.
+    unsafe, --unsafe-rule complete (the earlier behaviour):
+            k* = smallest bound with a property-matched violation and no
+            unwinding assertion failing, i.e. the violation AND complete
+            unwinding of every loop.
     safe:   k* = smallest bound at which CBMC reports success (which already
             implies no unwinding assertion failed) -- the completeness
             threshold.
@@ -93,6 +101,7 @@ COLS = [
     "schedule_outcome", "schedule_kstar", "schedule_cost", "schedule_rounds",
     "schedule_time", "schedule_failing_property", "schedule_path",
     "cost_ratio", "loop_independent", "other_property_violation", "trace_file",
+    "unsafe_rule",
 ]
 
 
@@ -115,7 +124,7 @@ def cbmc_run(cfile, data_model, prop, unwind=None, unwindset=None, timeout=180):
     return "ok", p.stdout
 
 
-def analyse(stdout, prop):
+def analyse(stdout, prop, verdict_kind=None, rule="complete"):
     """
     Return (verdict, failing_property, unwind_loop_ids, other_failure).
 
@@ -161,7 +170,15 @@ def analyse(stdout, prop):
         else:
             others.append(f)
 
-    # soundness veto first
+    # exposure rule, unsafe programs only: a property-matched violation is a
+    # real counterexample even if some other loop was cut short
+    if rule == "exposure" and verdict_kind == "unsafe":
+        accept = ACCEPT.get(prop, [])
+        for f in others:
+            if any(h in f.lower() for h in accept):
+                return "violation", f, [i for i in unwind_ids if i], ""
+
+    # unwinding veto (complete rule, and every safe program)
     if unwind_ids:
         return "unwind", "", [i for i in unwind_ids if i], ""
 
@@ -204,7 +221,8 @@ def uniform_cost(k, loop_ids, parents):
 
 # ------------------------------------------------------------------- searches
 
-def search_uniform(cfile, data_model, prop, verdict_kind, budget, max_k, per_k):
+def search_uniform(cfile, data_model, prop, verdict_kind, budget, max_k, per_k,
+                   rule="complete"):
     start = time.time()
     k = 0
     other_seen = ""
@@ -226,7 +244,7 @@ def search_uniform(cfile, data_model, prop, verdict_kind, budget, max_k, per_k):
                     "failing": "", "other": other_seen,
                     "time": round(time.time() - start, 1), "trace": None}
 
-        res, failing, _, other = analyse(out, prop)
+        res, failing, _, other = analyse(out, prop, verdict_kind, rule)
         if other and not other_seen:
             other_seen = other
         if is_done(verdict_kind, res):
@@ -241,7 +259,7 @@ def search_uniform(cfile, data_model, prop, verdict_kind, budget, max_k, per_k):
 
 
 def search_schedule(cfile, data_model, prop, verdict_kind, loop_ids,
-                    budget, max_k, per_k):
+                    budget, max_k, per_k, rule="complete"):
     start = time.time()
     schedule = {lid: 0 for lid in loop_ids}
     path, rounds, other_seen = [], 0, ""
@@ -266,7 +284,7 @@ def search_schedule(cfile, data_model, prop, verdict_kind, loop_ids,
                     "time": round(time.time() - start, 1),
                     "path": path, "trace": None}
 
-        res, failing, unwind_ids, other = analyse(out, prop)
+        res, failing, unwind_ids, other = analyse(out, prop, verdict_kind, rule)
         if other and not other_seen:
             other_seen = other
 
@@ -304,7 +322,7 @@ def search_schedule(cfile, data_model, prop, verdict_kind, loop_ids,
 
 def process(job):
     (rec, prop, verdict_kind, dataset, trace_dir, mode,
-     budget, max_k, per_k) = job
+     budget, max_k, per_k, rule) = job
 
     task, dirname = rec["task"], rec["dir"]
     cfile = Path(dataset) / dirname / rec["c_file"]
@@ -319,6 +337,7 @@ def process(job):
 
     row = {c: "" for c in COLS}
     row.update({
+        "unsafe_rule": rule,
         "task": task, "dir": dirname, "c_file": rec["c_file"],
         "property": prop, "verdict": verdict_kind, "category": category,
         "data_model": rec.get("data_model", "ILP32"),
@@ -341,7 +360,7 @@ def process(job):
         do_uniform, do_schedule = True, (n_loops > 1)
 
     if do_uniform:
-        u = search_uniform(cfile, dm, prop, verdict_kind, budget, max_k, per_k)
+        u = search_uniform(cfile, dm, prop, verdict_kind, budget, max_k, per_k, rule)
         row["uniform_outcome"] = u["outcome"]
         row["uniform_kstar"] = u["kstar"]
         row["uniform_k_reached"] = u["k_reached"]
@@ -355,7 +374,7 @@ def process(job):
 
     if do_schedule:
         s = search_schedule(cfile, dm, prop, verdict_kind, loop_ids,
-                            budget, max_k, per_k)
+                            budget, max_k, per_k, rule)
         row["schedule_outcome"] = s["outcome"]
         row["schedule_rounds"] = s["rounds"]
         row["schedule_time"] = s["time"]
@@ -499,7 +518,7 @@ def main():
                     help="'uniform' one depth for every loop (--unwind), "
                          "'schedule' one depth per loop (--unwindset), "
                          "'both' runs the schedule search only on multi-loop programs")
-    ap.add_argument("--budget", type=int, default=600,
+    ap.add_argument("--budget", type=int, default=900,
                     help="seconds allowed for the  incremental search on one program")
     ap.add_argument("--per-k-timeout", type=int, default=180,
                     help="seconds allowed for a single CBMC invocation at one depth")
@@ -511,6 +530,11 @@ def main():
     ap.add_argument("--verdicts", nargs="+", default=["unsafe", "safe"],
                     choices=["unsafe", "safe"],
                     help="which programs to include")
+    ap.add_argument("--unsafe-rule", choices=["exposure", "complete"],
+                    default="exposure",
+                    help="exposure (default): an unsafe pair's k* is the first "
+                         "depth with a property-matched violation; complete: "
+                         "also require that no unwinding assertion fails")
     ap.add_argument("--restart", action="store_true",
                     help="discard an existing --out file and start over")
     ap.add_argument("--summary-only", action="store_true",
@@ -547,10 +571,11 @@ def main():
 
     jobs_spec.sort(key=lambda j: len(j[0].get("loops", [])))
     jobs = [(rec, prop, verdict, a.dataset, a.trace_dir, a.mode,
-             a.budget, a.max_k, a.per_k_timeout)
+             a.budget, a.max_k, a.per_k_timeout, a.unsafe_rule)
             for (rec, prop, verdict) in jobs_spec]
 
-    print("work items: {}   mode={}".format(len(jobs), a.mode))
+    print("work items: {}   mode={}   unsafe rule={}".format(
+        len(jobs), a.mode, a.unsafe_rule))
     print("worst case ~{:.1f} h at --jobs {}".format(
         len(jobs) * a.budget * 2 / 3600.0 / max(1, a.jobs), a.jobs))
 
