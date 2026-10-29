@@ -1,0 +1,1 @@
+frama-c -machdep x86_32 transformed_program.c m.c   -slice-value i -eva-slevel 100   -then-on 'Slicing export' -print -ocode sliced_program.c

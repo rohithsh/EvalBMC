@@ -1,0 +1,2 @@
+frama-c transformed_program.c -slice-value "i" -eva-slevel 100 \
+  -then-on 'Slicing export' -print -ocode sliced_program.c
