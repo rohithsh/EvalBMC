@@ -1,0 +1,29 @@
+GROUND TRUTH  pairs 2457  k* found 1054 (k*=0 305, k*>0 749)  no k* 1399  other 4
+   by verdict: {('safe', 'found'): 540, ('unsafe', 'found'): 514, ('safe', 'timeout'): 1191, ('unsafe', 'timeout'): 208, ('safe', 'unexpected_violation'): 4}
+
+=== Syntactic ===
+TABLE I   proposed 485  abstained 1972  solved 96 (19.8% of proposed)
+   on k*>0 (749): proposed 119  solved 59  exact 53  over 5  under 36  mixed 25
+   solved by verdict: {'safe': 57, 'unsafe': 39}  proposed by verdict: {'safe': 361, 'unsafe': 124}
+RQ2       no k* (1399): proposed 347  solved 19  by verdict {'safe': 16, 'unsafe': 3}
+TABLE III works 96  insufficient 136  impractical 208  timeout 24  other_property 20  inconclusive 1  no_violation 0   (k* found / no k*: too small 59 / 77, impractical 0 / 208)
+RQ3       pairs 59  ID mean 6.0 s / median 0.5 s   CBMC run mean 4.3 / median 0.1   bound mean 0.0 / median 0.0   faster: CBMC 59 , incl. bound 59
+          steps     n=96    median          326  max        186,651
+          variables n=72    median        6,008  max        393,315
+          clauses   n=72    median          506  max        656,295
+TABLE II  constant 75/292  input-bounded 1/2  data-dependent 0/0  mixed 20/191   | no-k* solved: {'constant': 19}
+
+=== Qwen3.5 ===
+TABLE I   proposed 1900  abstained 557  solved 1095 (57.6% of proposed)
+   on k*>0 (749): proposed 734  solved 698  exact 510  over 169  under 31  mixed 24
+   solved by verdict: {'safe': 569, 'unsafe': 526}  proposed by verdict: {'unsafe': 690, 'safe': 1210}
+RQ2       no k* (1399): proposed 862  solved 101  by verdict {'safe': 55, 'unsafe': 46}
+TABLE III works 1095  insufficient 93  impractical 390  timeout 204  other_property 107  inconclusive 9  no_violation 2   (k* found / no k*: too small 33 / 59, impractical 1 / 389)
+RQ3       pairs 698  ID mean 24.4 s / median 0.8 s   CBMC run mean 3.8 / median 0.2   bound mean 235.1 / median 82.0   faster: CBMC 673 , incl. bound 44
+          steps     n=1095  median          377  max      2,431,770
+          variables n=1010  median       18,794  max     17,719,177
+          clauses   n=1010  median       33,965  max     97,062,399
+TABLE II  constant 239/694  input-bounded 112/213  data-dependent 563/693  mixed 181/300   | no-k* solved: {'constant': 42, 'mixed': 25, 'data-dependent': 30, 'input-bounded': 4}
+
+RQ2 overlap on no-k* pairs:
+   Syntactic & Qwen3.5: both 19  only Syntactic 0  only Qwen3.5 82  union 101

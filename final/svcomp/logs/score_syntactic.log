@@ -1,0 +1,46 @@
+predictions: 2457   ground-truth rows: 2457
+model: ast-pass
+cbmc: 6.8.0 (cbmc-6.8.0)   unsafe rule: exposure
+verification cache: final/cache/verify.sqlite  (2821 runs stored)
+first CBMC command, check it matches your k* run:
+   cbmc datasets/cleaned/svcomp_clean/array-crafted/bAnd1.i --32 --unwinding-assertions --no-standard-checks --json-ui --verbosity 8 --unwind ...
+all 277 CBMC runs answered from the cache
+
+==================================================================
+SCORE A -- agreement with k* (by cost)
+==================================================================
+   no_prediction           1972  (80.3%)
+   no_ground_truth          366  (14.9%)
+   exact                     53  (2.2%)
+   under                     36  (1.5%)
+   mixed                     25  (1.0%)
+   over                       5  (0.2%)
+
+   tightness (pred cost / true cost), n=119
+      median=1.00  p25=0.50  p75=1.00  max=6.5
+
+==================================================================
+SCORE B -- does the predicted bound work?
+==================================================================
+   impractical              208  (42.9%)
+   insufficient             136  (28.0%)
+   works                     96  (19.8%)
+   timeout                   24  (4.9%)
+   other_property            20  (4.1%)
+   inconclusive               1  (0.2%)
+
+   usable rate: 96/485 (19.8%)
+   solved where iterative deepening failed: 19 (of 1399 rows where it failed)
+
+   speedup over iterative deepening, where both work (n=59)
+      verification only    median 3.33x
+      including prediction median 3.12x
+
+by loop category (Score B):
+   constant         75/292 worked (25.7%)
+   input-bounded    1/2 worked (50.0%)
+   mixed            20/191 worked (10.5%)
+
+verification cache: 277 hits, 0 CBMC runs, 0 stored
+
+scores -> final/svcomp/scores/syntactic.csv

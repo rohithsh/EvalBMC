@@ -1,0 +1,31 @@
+strategy,dimension,group,compared,exact,over,under,mixed,over_median_tightness,over_max_tightness,over_within_2x,schedules
+Syntactic,all,all,119,53,5,36,25,1.57,2.0,5,102
+Syntactic,kind,heap / data structures,59,14,4,18,23,1.62,2.0,4,48
+Syntactic,kind,integer loops,30,15,0,13,2,,,0,24
+Syntactic,kind,arrays,22,22,0,0,0,,,0,22
+Syntactic,kind,systems code,7,2,1,4,0,1.12,1.12,1,7
+Syntactic,kind,bit-level,1,0,0,1,0,,,0,1
+Syntactic,category,constant,61,51,5,5,0,1.57,2.0,5,44
+Syntactic,category,mixed,57,2,0,30,25,,,0,57
+Syntactic,category,input-bounded,1,0,0,1,0,,,0,1
+Syntactic,loops,2-3,67,31,2,23,11,1.56,2.0,2,67
+Syntactic,loops,4+,35,7,1,13,14,1.67,1.67,1,35
+Syntactic,loops,1,17,15,2,0,0,1.54,1.57,2,0
+Syntactic,nesting,flat,99,44,5,29,21,1.57,2.0,5,82
+Syntactic,nesting,nested,20,9,0,7,4,,,0,20
+Qwen3.5,all,all,734,510,169,31,24,1.33,341.67,143,405
+Qwen3.5,kind,non-linear arithmetic,367,254,93,16,4,1.5,37.51,77,201
+Qwen3.5,kind,heap / data structures,121,70,34,5,12,1.12,341.67,28,57
+Qwen3.5,kind,integer loops,95,87,8,0,0,1.06,5.0,6,61
+Qwen3.5,kind,arrays,83,71,0,4,8,,,0,33
+Qwen3.5,kind,bit-level,49,15,28,6,0,1.29,5.0,26,40
+Qwen3.5,kind,systems code,19,13,6,0,0,1.29,1.6,6,13
+Qwen3.5,category,data-dependent,343,233,86,22,2,1.18,15.0,74,192
+Qwen3.5,category,constant,192,143,43,4,2,1.5,37.51,36,124
+Qwen3.5,category,mixed,124,71,39,1,13,1.1,341.67,33,63
+Qwen3.5,category,input-bounded,75,63,1,4,7,5.0,5.0,0,26
+Qwen3.5,loops,2-3,349,220,96,21,12,1.48,37.51,79,182
+Qwen3.5,loops,1,301,237,57,7,0,1.17,5.0,53,190
+Qwen3.5,loops,4+,84,53,16,3,12,1.27,341.67,11,33
+Qwen3.5,nesting,flat,630,447,145,16,22,1.25,341.67,129,337
+Qwen3.5,nesting,nested,104,63,24,15,2,2.0,37.51,14,68

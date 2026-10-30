@@ -1,0 +1,23 @@
+predictions: 405   ground-truth rows: 418
+model: qwen3.5-397b-a17b
+cbmc: 6.8.0 (cbmc-6.8.0)   unsafe rule: exposure
+verification cache: final/cache/verify.sqlite  (2941 runs stored)
+first CBMC command, check it matches your k* run:
+   cbmc datasets/tdx_cprover_default/cprover_havoc/tdg_mr_report__expected__safety_requirement_cprover_havoc.i --64 --unwinding-assertions --no-standard-checks --json-ui --verbosity 8 --unwind ...
+verifying 399 predictions with CBMC (--jobs 6), 0 more answered from the cache
+   25/399  (31m)
+   50/399  (59m)
+   75/399  (86m)
+   100/399  (142m)
+   125/399  (171m)
+   150/399  (216m)
+   175/399  (248m)
+   200/399  (279m)
+   225/399  (343m)
+[bmc_cache] WARNING: cannot write final/cache/verify.sqlite (database or disk is full). The run continues; results go to the output file but are not cached.
+   250/399  (402m)
+   275/399  (445m)
+   300/399  (476m)
+   325/399  (490m)
+   350/399  (498m)
+   375/399  (528m)
