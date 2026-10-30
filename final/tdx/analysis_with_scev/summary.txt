@@ -1,0 +1,54 @@
+pairs: 418   strategies: Syntactic, SCEV
+
+solved / proposed per strategy (in brackets: solved where ID found no k*)
+dim        group                       pairs     ID        Syntactic             SCEV
+side       host (tdh_*)                  343    137     170/343 (46)      87/251 (26)
+side       guest (tdg_*)                  75     27        32/75 (5)        21/48 (5)
+harness    cover_exit                    134     51      69/134 (25)       33/92 (13)
+harness    cover_entry                   103     70       79/103 (9)        49/73 (9)
+harness    cover_proof                   101     40      51/101 (17)        23/71 (9)
+harness    safety_requirement             80      3         3/80 (0)         3/63 (0)
+scenario   other                         181     75      87/181 (21)      50/142 (14)
+scenario   unexpected                     88     38       56/88 (20)       32/56 (12)
+scenario   invalid_input                  79     26        29/79 (3)        12/55 (2)
+scenario   expected                       70     25        30/70 (7)        14/46 (3)
+category   mixed                         380    135     186/380 (51)      92/261 (31)
+category   constant                       38     29        16/38 (0)        16/38 (0)
+loops      4+                            298     74     115/298 (41)      92/261 (31)
+loops      2-3                            90     67       64/90 (10)         6/25 (0)
+loops      1                              17     13        13/17 (0)          0/0 (0)
+loops      0 (wrappers only)              13     10        10/13 (0)        10/13 (0)
+nesting    flat                          226    101     127/226 (26)      49/134 (11)
+nesting    nested                        192     63      75/192 (25)      59/165 (20)
+arrays     yes                           388    141     179/388 (51)      98/286 (31)
+arrays     no                             30     23        23/30 (0)        10/13 (0)
+pointers   yes                           336    111     162/336 (51)      92/261 (31)
+pointers   no                             82     53        40/82 (0)        16/38 (0)
+nondet     no                            418    164     202/418 (51)     108/299 (31)
+property   reach                         418    164     202/418 (51)     108/299 (31)
+verdict    unsafe                        329    152     190/329 (51)      96/227 (31)
+verdict    safe                           89     12        12/89 (0)        12/72 (0)
+
+routes
+route                               solved  no-k* median s/solved mean s/solved  mean s/give-up
+ID alone                               164      0           25.4         56.1           364.2
+Syntactic alone                        202     51           58.1        101.3           343.6
+SCEV alone                             108     31           42.8        116.6           202.2
+Syntactic then ID                      215     51           68.7        139.1           687.9
+SCEV then ID                           195     31           57.5        137.2           590.1
+ID + Syntactic after 0 s               215     51           58.3         97.2           518.5
+ID + Syntactic after 10 s              215     51           64.8        102.7           522.9
+ID + Syntactic after 30 s              215     51           66.9        109.3           531.8
+ID + Syntactic after 60 s              215     51           75.6        116.8           545.2
+ID + Syntactic after 120 s             215     51           75.6        131.1           572.1
+ID + Syntactic after 300 s             215     51           75.6        153.2           613.8
+ID + SCEV after 0 s                    195     31           39.5         88.8           448.0
+ID + SCEV after 10 s                   195     31           44.7         91.2           451.0
+ID + SCEV after 30 s                   195     31           60.3         95.2           457.1
+ID + SCEV after 60 s                   195     31           60.3        100.1           466.3
+ID + SCEV after 120 s                  195     31           60.3        109.6           484.6
+ID + SCEV after 300 s                  195     31           60.3        127.8           522.3
+route by category (t=60 s)             164      0           25.4        103.6           385.5
+oracle (best per pair)                 216     52           59.2         98.6           361.7
+
+-> final/tdx/analysis_with_scev/groups.csv, routes.csv, tightness.csv

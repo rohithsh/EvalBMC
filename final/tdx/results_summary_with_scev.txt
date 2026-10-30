@@ -1,0 +1,29 @@
+GROUND TRUTH  pairs 418  k* found 164 (k*=0 164, k*>0 0)  no k* 254  other 0
+   by verdict: {('unsafe', 'found'): 152, ('safe', 'timeout'): 77, ('unsafe', 'timeout'): 177, ('safe', 'found'): 12}
+
+=== Syntactic ===
+TABLE I   proposed 418  abstained 0  solved 202 (48.3% of proposed)
+   on k*>0 (0): proposed 0  solved 0  exact 0  over 0  under 0  mixed 0
+   solved by verdict: {'unsafe': 190, 'safe': 12}  proposed by verdict: {'safe': 89, 'unsafe': 329}
+RQ2       no k* (254): proposed 254  solved 51  by verdict {'unsafe': 51}
+TABLE III works 202  insufficient 101  impractical 0  timeout 107  other_property 0  inconclusive 8  no_violation 0   (k* found / no k*: too small 0 / 101, impractical 0 / 0)
+RQ3       pairs 0  ID mean nan s / median nan s   CBMC run mean nan / median nan   bound mean nan / median nan   faster: CBMC 0 , incl. bound 0
+          steps     n=202   median       49,567  max        115,746
+          variables n=202   median    3,127,740  max     12,060,219
+          clauses   n=202   median      719,094  max     12,974,542
+TABLE II  constant 16/38  input-bounded 0/0  data-dependent 0/0  mixed 186/380   | no-k* solved: {'mixed': 51}
+
+=== SCEV ===
+TABLE I   proposed 299  abstained 119  solved 108 (36.1% of proposed)
+   on k*>0 (0): proposed 0  solved 0  exact 0  over 0  under 0  mixed 0
+   solved by verdict: {'unsafe': 96, 'safe': 12}  proposed by verdict: {'unsafe': 227, 'safe': 72}
+RQ2       no k* (254): proposed 209  solved 31  by verdict {'unsafe': 31}
+TABLE III works 108  insufficient 98  impractical 0  timeout 85  other_property 0  inconclusive 8  no_violation 0   (k* found / no k*: too small 0 / 98, impractical 0 / 0)
+RQ3       pairs 0  ID mean nan s / median nan s   CBMC run mean nan / median nan   bound mean nan / median nan   faster: CBMC 0 , incl. bound 0
+          steps     n=108   median       51,039  max        115,746
+          variables n=108   median    3,127,553  max     12,060,219
+          clauses   n=108   median      149,793  max     12,974,542
+TABLE II  constant 6/25  input-bounded 0/0  data-dependent 0/0  mixed 92/261   | no-k* solved: {'mixed': 31}
+
+RQ2 overlap on no-k* pairs:
+   Syntactic & SCEV: both 30  only Syntactic 21  only SCEV 1  union 52
