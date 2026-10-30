@@ -1,0 +1,79 @@
+pairs: 2457   strategies: Syntactic, Qwen3.5, SCEV
+
+solved / proposed per strategy (in brackets: solved where ID found no k*)
+dim        group                       pairs     ID        Syntactic          Qwen3.5             SCEV
+kind       non-linear arithmetic         733    414          0/0 (0)     448/696 (57)          0/0 (0)
+kind       arrays                        675    121       30/255 (8)     121/455 (14)       26/285 (4)
+kind       integer loops                 419    149       27/84 (11)     170/304 (23)      41/126 (11)
+kind       heap / data structures        385    204       36/135 (0)      196/254 (5)        20/48 (0)
+kind       bit-level                     107     74          0/1 (0)        67/87 (0)          6/8 (0)
+kind       systems code                  102     90         3/10 (0)        91/99 (2)         4/14 (0)
+kind       control flow                   36      2          0/0 (0)          2/5 (0)          0/0 (0)
+category   data-dependent                881    562          0/0 (0)     563/693 (30)          0/1 (0)
+category   constant                      700    204      75/292 (19)     239/694 (42)      82/357 (15)
+category   mixed                         484    164       20/191 (0)     181/300 (25)       14/120 (0)
+category   input-bounded                 392    124          1/2 (0)      112/213 (4)          1/3 (0)
+loops      2-3                          1033    412      56/293 (12)     440/820 (48)       50/258 (8)
+loops      1                             974    523        24/36 (7)     555/796 (48)        40/67 (7)
+loops      4+                            450    119       16/156 (0)      100/284 (5)        7/156 (0)
+nesting    flat                         2069    927      85/411 (19)    965/1603 (80)      88/370 (15)
+nesting    nested                        388    127        11/74 (0)     130/297 (21)        9/111 (0)
+arrays     no                           1484    756       28/110 (0)    786/1180 (65)        33/82 (0)
+arrays     yes                           973    298      68/375 (19)     309/720 (36)      64/399 (15)
+pointers   no                           2346   1011      89/459 (19)   1053/1842 (98)      91/472 (15)
+pointers   yes                           111     43         7/26 (0)        42/58 (3)          6/9 (0)
+nondet     no                           1674    816      51/210 (12)    846/1377 (78)       60/234 (8)
+nondet     yes                           783    238       45/275 (7)     249/523 (23)       37/247 (7)
+property   reach                        1188    468      51/276 (13)     509/896 (72)       52/285 (9)
+property   overflow                      893    408       23/121 (5)     411/770 (20)       26/149 (5)
+property   memsafety                     376    178        22/88 (1)      175/234 (9)        19/47 (1)
+verdict    safe                         1735    540      57/361 (16)    569/1210 (55)      65/379 (12)
+verdict    unsafe                        722    514       39/124 (3)     526/690 (46)       32/102 (3)
+
+routes
+route                               solved  no-k* median s/solved mean s/solved  mean s/give-up
+ID alone                              1054      0            0.4         18.6           736.6
+Syntactic alone                         96     19            0.2          4.0             6.2
+Qwen3.5 alone                         1095    101           89.7        512.2           207.0
+SCEV alone                              97     15            0.3          3.5            15.0
+Syntactic then ID                     1073     19            0.4         18.4           744.8
+Qwen3.5 then ID                       1155    101           90.6        497.4           953.7
+SCEV then ID                          1069     15            0.6         18.3           760.1
+ID + Syntactic after 0 s              1073     19            0.4         18.3           739.5
+ID + Syntactic after 10 s             1073     19            0.4         18.6           739.6
+ID + Syntactic after 30 s             1073     19            0.4         19.0           739.9
+ID + Syntactic after 60 s             1073     19            0.4         19.5           740.2
+ID + Syntactic after 120 s            1073     19            0.4         20.6           741.0
+ID + Syntactic after 300 s            1073     19            0.4         23.7           741.7
+ID + Qwen3.5 after 0 s                1155    101            0.5         26.9           804.0
+ID + Qwen3.5 after 10 s               1155    101            0.5         28.1           805.3
+ID + Qwen3.5 after 30 s               1155    101            0.5         30.5           808.0
+ID + Qwen3.5 after 60 s               1155    101            0.5         34.0           812.2
+ID + Qwen3.5 after 120 s              1155    101            0.5         40.6           821.5
+ID + Qwen3.5 after 300 s              1155    101            0.5         55.6           845.9
+ID + SCEV after 0 s                   1069     15            0.4         18.1           741.2
+ID + SCEV after 10 s                  1069     15            0.4         18.4           741.4
+ID + SCEV after 30 s                  1069     15            0.4         18.7           741.7
+ID + SCEV after 60 s                  1069     15            0.4         19.2           742.2
+ID + SCEV after 120 s                 1069     15            0.4         20.1           743.4
+ID + SCEV after 300 s                 1069     15            0.4         22.7           745.8
+route by category (t=60 s)            1132     78            0.5         28.7           767.2
+oracle (best per pair)                1155    101            0.5         25.6           745.7
+
+tightness on pairs with k* > 0 (bound vs its reference)
+strategy   dim        group                    compared  exact  over  under  mixed  over: med.      max    <=2x
+Syntactic  all        all                           119     53     5     36     25        1.57      2.0       5
+Syntactic  category   constant                       61     51     5      5      0        1.57      2.0       5
+Syntactic  category   mixed                          57      2     0     30     25                            0
+Syntactic  category   input-bounded                   1      0     0      1      0                            0
+Qwen3.5    all        all                           734    510   169     31     24        1.33   341.67     143
+Qwen3.5    category   data-dependent                343    233    86     22      2        1.18     15.0      74
+Qwen3.5    category   constant                      192    143    43      4      2         1.5    37.51      36
+Qwen3.5    category   mixed                         124     71    39      1     13         1.1   341.67      33
+Qwen3.5    category   input-bounded                  75     63     1      4      7         5.0      5.0       0
+SCEV       all        all                           124     69     7     44      4         2.0      8.0       6
+SCEV       category   constant                       81     61     6     14      0        1.83      2.0       6
+SCEV       category   mixed                          43      8     1     30      4         8.0      8.0       0
+(all groupings in tightness.csv)
+
+-> final/svcomp/analysis_with_scev/groups.csv, routes.csv, tightness.csv
